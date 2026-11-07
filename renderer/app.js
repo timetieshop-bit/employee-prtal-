@@ -143,7 +143,7 @@ function hideMsgToast() {
   const el = document.getElementById('msg-toast');
   if (!el) return;
   el.classList.remove('show');
-  setTimeout(() => { el.hidden = true; }, 220);
+  setTimeout(() => { el.hidden = true; }, 460); // match the slide-up transition
 }
 // Escape HTML, then highlight #tags and @mentions.
 function renderBody(text) {
@@ -1356,8 +1356,9 @@ function renderDock() {
     const name = c.full_name || c.username || ('User ' + c.id);
     const unread = headUnread[c.id] || 0;
     const isActive = chatActive && chatActive.id === c.id && !chatPanel.hidden;
+    const proc = (contactsById[c.id] || c).processing ? ' processing' : '';
     const el = document.createElement('div');
-    el.className = 'chat-head-chip' + (isActive ? ' active' : '') + (unread ? ' has-unread' : '');
+    el.className = 'chat-head-chip' + (isActive ? ' active' : '') + (unread ? ' has-unread' : '') + proc;
     el.innerHTML =
       `<button class="chip-open" title="${escapeHtml(name)}">
          <span class="avatar sm" style="background:${avatarColor(c.id)}">${escapeHtml(initials(name))}</span>
@@ -1383,6 +1384,54 @@ function minimizeChat() {
   renderDock();
 }
 document.getElementById('chat-min').addEventListener('click', minimizeChat);
+
+// ---- Floating chat window: draggable (by header) + resizable, remembered ----
+(function () {
+  const panel = document.getElementById('chat-panel');
+  const head = panel ? panel.querySelector('.chat-head') : null;
+  if (!panel || !head) return;
+  const KEY = 'chatPanelBox';
+  try {
+    const box = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (box) {
+      panel.classList.add('floating');
+      if (box.w) panel.style.width = box.w + 'px';
+      if (box.h) panel.style.height = box.h + 'px';
+      const left = Math.min(Math.max(0, box.left), window.innerWidth - 80);
+      const top = Math.min(Math.max(0, box.top), window.innerHeight - 60);
+      panel.style.left = left + 'px'; panel.style.top = top + 'px';
+      panel.style.right = 'auto'; panel.style.bottom = 'auto';
+    }
+  } catch (_) {}
+  const save = () => {
+    try {
+      const r = panel.getBoundingClientRect();
+      localStorage.setItem(KEY, JSON.stringify({ left: Math.round(r.left), top: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }));
+    } catch (_) {}
+  };
+  head.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    const r = panel.getBoundingClientRect();
+    panel.classList.add('floating');
+    panel.style.width = r.width + 'px'; panel.style.height = r.height + 'px';
+    panel.style.left = r.left + 'px'; panel.style.top = r.top + 'px';
+    panel.style.right = 'auto'; panel.style.bottom = 'auto';
+    const offX = e.clientX - r.left, offY = e.clientY - r.top;
+    try { head.setPointerCapture(e.pointerId); } catch (_) {}
+    head.classList.add('dragging');
+    const move = (ev) => {
+      panel.style.left = Math.min(Math.max(0, ev.clientX - offX), window.innerWidth - 60) + 'px';
+      panel.style.top = Math.min(Math.max(0, ev.clientY - offY), window.innerHeight - 40) + 'px';
+    };
+    const up = () => { head.classList.remove('dragging'); document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); save(); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+    e.preventDefault();
+  });
+  if (window.ResizeObserver) {
+    let rt = null;
+    new ResizeObserver(() => { if (panel.hidden) return; if (rt) clearTimeout(rt); rt = setTimeout(save, 400); }).observe(panel);
+  }
+})();
 
 // ---- Avatar helpers ----
 const AVATAR_COLORS = [
@@ -1443,21 +1492,38 @@ async function loadContacts() {
   const list = document.getElementById('chat-list');
   const empty = document.getElementById('chat-list-empty');
   list.innerHTML = '';
-  const contacts = res.contacts || [];
+  const contacts = (res.contacts || []).slice();
   empty.hidden = contacts.length > 0;
+
+  // Priority: whoever I'm actively processing a sale with floats to the top,
+  // then unread, then the server's order.
+  contacts.sort((a, b) => {
+    const pa = a.processing ? 1 : 0, pb = b.processing ? 1 : 0;
+    if (pa !== pb) return pb - pa;
+    const ua = a.unread ? 1 : 0, ub = b.unread ? 1 : 0;
+    if (ua !== ub) return ub - ua;
+    return 0;
+  });
 
   for (const c of contacts) {
     contactsById[c.id] = c;
     const name = c.full_name || c.username;
     const item = document.createElement('div');
-    item.className = 'chat-item' + (chatActive && chatActive.id === c.id ? ' active' : '');
+    item.className = 'chat-item' + (chatActive && chatActive.id === c.id ? ' active' : '') + (c.processing ? ' processing' : '');
     const stCls = statusClass(c.status);
-    const stLabel = c.status ? `<span class="st-label ${stCls}">${c.status === 'free' ? 'available' : c.status}</span>` : '';
+    // When a sale is in progress between us, that takes over the sub-line.
+    let sub;
+    if (c.processing_dir === 'mine') sub = `<span class="proc-label">● Processing your sale</span>`;
+    else if (c.processing_dir === 'handling') sub = `<span class="proc-label">● Processing ${escapeHtml((name.split(' ')[0]))}'s sale</span>`;
+    else {
+      const stLabel = c.status ? `<span class="st-label ${stCls}">${c.status === 'free' ? 'available' : c.status}</span>` : '';
+      sub = stLabel || '@' + escapeHtml(c.username);
+    }
     item.innerHTML =
-      `<div class="avatar-wrap ${stCls}"><div class="avatar" style="background:${avatarColor(c.id)}">${escapeHtml(initials(name))}</div></div>
+      `<div class="avatar-wrap ${stCls}${c.processing ? ' processing' : ''}"><div class="avatar" style="background:${avatarColor(c.id)}">${escapeHtml(initials(name))}</div></div>
        <div class="chat-item-main">
          <div class="chat-item-name">${escapeHtml(name)}</div>
-         <div class="chat-item-sub">${stLabel || '@' + escapeHtml(c.username)}</div>
+         <div class="chat-item-sub">${sub}</div>
        </div>
        <div class="chat-item-right">
          <span class="role-chip ${roleClass(c.role)}">${escapeHtml(c.role)}</span>

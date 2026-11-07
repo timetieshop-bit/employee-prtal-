@@ -373,18 +373,28 @@
     b.querySelector('.ctl-ic').textContent = held ? '▶️' : '⏸';
     b.querySelector('.ctl-tx').textContent = held ? 'Resume' : 'Hold';
   }
-  function press(k) {
-    if (inCall) {
-      if (isNative()) { try { window.portal.nativeDtmf(k); } catch (_) {} }
-      else if (session) { try { session.sendDTMF(k); } catch (_) {} }
-    } else { $('phone-number').value += k; }
+  let toneTimer = null;
+  function flashTone(label) {
+    setState(label);
+    if (toneTimer) clearTimeout(toneTimer);
+    toneTimer = setTimeout(() => { if (inCall) setState(held ? 'On hold' : 'In call'); }, 1100);
   }
-  function sendDtmfString(str) {
-    const tones = String(str || '').replace(/[^0-9*#A-Da-d]/g, '');
+  // Send one or more DTMF tones in exact order (RFC2833 over RTP).
+  function sendTones(raw) {
+    const tones = String(raw || '').replace(/[^0-9*#A-Da-d]/g, '');
     if (!tones || !inCall) return;
-    if (isNative()) { try { window.portal.nativeDtmf(tones); } catch (_) {} }
-    else if (session) { try { session.sendDTMF(tones); } catch (_) {} }
+    if (isNative()) {
+      try { window.portal.nativeDtmf(tones); } catch (_) {}
+    } else if (session) {
+      try { session.sendDTMF(tones, { duration: 160, interToneGap: 120 }); } catch (_) {}
+    }
+    flashTone(tones.length > 1 ? 'Tones: ' + tones : 'Tone ' + tones);
   }
+  function press(k) {
+    if (inCall) sendTones(k);                 // during a call, keypad taps are DTMF
+    else $('phone-number').value += k;        // before a call, build the number
+  }
+  function sendDtmfString(str) { sendTones(str); }
 
   // ---------- caption audio tap (driven by window.TopCaptions) ----------
   let capCtx = null, capSrc = null, capProc = null;
@@ -457,4 +467,32 @@
   if (dtmfPad) dtmfPad.addEventListener('click', (e) => { const b = e.target.closest('button[data-dt]'); if (b) sendDtmfString(b.dataset.dt); });
   $('phone-dtmf-send').addEventListener('click', () => { sendDtmfString($('phone-dtmf').value); $('phone-dtmf').value = ''; });
   $('phone-dtmf').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendDtmfString(e.target.value); e.target.value = ''; } });
+
+  // Minimized call bar: draggable anywhere, position remembered (bottom-left default).
+  const mini = $('phone-mini');
+  if (mini) {
+    try {
+      const p = JSON.parse(localStorage.getItem('phoneMiniPos') || 'null');
+      if (p) { mini.style.left = p.left + 'px'; mini.style.top = p.top + 'px'; mini.style.right = 'auto'; mini.style.bottom = 'auto'; }
+    } catch (_) {}
+    mini.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return; // let the buttons work
+      const r = mini.getBoundingClientRect();
+      mini.style.left = r.left + 'px'; mini.style.top = r.top + 'px'; mini.style.right = 'auto'; mini.style.bottom = 'auto';
+      const offX = e.clientX - r.left, offY = e.clientY - r.top;
+      try { mini.setPointerCapture(e.pointerId); } catch (_) {}
+      mini.classList.add('dragging');
+      const move = (ev) => {
+        mini.style.left = Math.min(Math.max(0, ev.clientX - offX), window.innerWidth - 60) + 'px';
+        mini.style.top = Math.min(Math.max(0, ev.clientY - offY), window.innerHeight - 30) + 'px';
+      };
+      const up = () => {
+        mini.classList.remove('dragging');
+        document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+        try { const rr = mini.getBoundingClientRect(); localStorage.setItem('phoneMiniPos', JSON.stringify({ left: Math.round(rr.left), top: Math.round(rr.top) })); } catch (_) {}
+      };
+      document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+      e.preventDefault();
+    });
+  }
 })();

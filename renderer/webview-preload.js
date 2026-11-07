@@ -5,6 +5,11 @@
 // nothing can be copied from the portal to another app, or pasted in from one.
 // Drag-and-drop, the right-click menu, DevTools and screenshots stay blocked.
 
+// A marker so a web page can tell it is running inside the Employee Portal and
+// adapt (e.g. open a URL as an in-app tab via window.open(httpsUrl) instead of
+// the blank-first popup trick, which the portal turns into a separate window).
+try { window.__EP_APP = true; window.__EMPLOYEE_PORTAL = true; } catch (_) {}
+
 // ============================================================
 // Browser-fidelity normalization
 // The embedded browser is driven by a human agent, but Electron leaks a few JS
@@ -129,8 +134,16 @@
   let ipc = null;
   try { ipc = require('electron').ipcRenderer; } catch (_) { ipc = null; }
 
+  // Google apps (Sheets/Docs) manage copy/paste and cell selection themselves via
+  // the page's own clipboard handling. Our capture-phase interceptor was calling
+  // preventDefault on 'copy', which made Ctrl+C copy BLANK and broke drag-select.
+  // On Google domains we step aside completely and let the native clipboard work.
+  const HOST = (location.hostname || '').toLowerCase();
+  const NATIVE_CLIP = /(^|\.)google\.com$/.test(HOST);
+
   // Clipboard isolation on? (server flag). Fail safe = on.
   const lockOn = () => {
+    if (NATIVE_CLIP) return false;          // never intercept on Google apps
     if (!ipc) return true;
     try { return ipc.sendSync('clip:lock'); } catch (_) { return true; }
   };
@@ -188,6 +201,7 @@
   //  main process.)
   ['dragstart', 'drop', 'dragover', 'beforecopy', 'beforecut', 'beforepaste']
     .forEach((ev) => window.addEventListener(ev, (e) => {
+      if (NATIVE_CLIP) return;              // Google apps: leave drag/selection native
       if (!lockOn() && (ev === 'beforecopy' || ev === 'beforecut' || ev === 'beforepaste')) return;
       hardStop(e);
     }, true));
