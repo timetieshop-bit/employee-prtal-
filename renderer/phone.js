@@ -115,12 +115,17 @@
     const c = contacts.find((x) => (x.number || '').replace(/\D/g, '') === (num || '').replace(/\D/g, ''));
     return c ? c.name : '';
   }
+  let contactQuery = '';
   function renderContacts() {
     const list = $('phone-contacts-list'), empty = $('phone-contacts-empty');
     if (!list) return;
+    const q = contactQuery.trim().toLowerCase();
+    const filtered = q
+      ? contacts.filter((c) => (c.name || '').toLowerCase().includes(q) || (c.number || '').replace(/\s/g, '').includes(q.replace(/\s/g, '')))
+      : contacts;
     list.innerHTML = '';
-    if (empty) empty.hidden = contacts.length > 0;
-    contacts.forEach((c) => {
+    if (empty) { empty.hidden = filtered.length > 0; empty.textContent = (q && !filtered.length) ? 'No matches.' : 'No contacts yet.'; }
+    filtered.forEach((c) => {
       const row = document.createElement('div');
       row.className = 'ph-row';
       row.innerHTML = '<span class="ph-ava"></span><div class="ph-row-main"><div class="ph-row-nm"></div><div class="ph-row-nu"></div></div><button class="ph-row-call" title="Call">' +
@@ -490,6 +495,39 @@
         mini.classList.remove('dragging');
         document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
         try { const rr = mini.getBoundingClientRect(); localStorage.setItem('phoneMiniPos', JSON.stringify({ left: Math.round(rr.left), top: Math.round(rr.top) })); } catch (_) {}
+      };
+      document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+      e.preventDefault();
+    });
+  }
+
+  // Contacts search
+  const search = $('phone-contact-search');
+  if (search) search.addEventListener('input', (e) => { contactQuery = e.target.value; renderContacts(); });
+
+  // Make the whole phone window draggable by its header (position remembered).
+  const head = panel.querySelector('.ph-head');
+  if (head) {
+    try {
+      const p = JSON.parse(localStorage.getItem('phonePanelPos') || 'null');
+      if (p) { panel.classList.add('floating'); panel.style.left = p.left + 'px'; panel.style.top = p.top + 'px'; panel.style.right = 'auto'; panel.style.bottom = 'auto'; }
+    } catch (_) {}
+    head.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return;
+      const r = panel.getBoundingClientRect();
+      panel.classList.add('floating');
+      panel.style.left = r.left + 'px'; panel.style.top = r.top + 'px'; panel.style.right = 'auto'; panel.style.bottom = 'auto';
+      const offX = e.clientX - r.left, offY = e.clientY - r.top;
+      try { head.setPointerCapture(e.pointerId); } catch (_) {}
+      head.classList.add('dragging');
+      const move = (ev) => {
+        panel.style.left = Math.min(Math.max(0, ev.clientX - offX), window.innerWidth - 60) + 'px';
+        panel.style.top = Math.min(Math.max(0, ev.clientY - offY), window.innerHeight - 40) + 'px';
+      };
+      const up = () => {
+        head.classList.remove('dragging');
+        document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+        try { const rr = panel.getBoundingClientRect(); localStorage.setItem('phonePanelPos', JSON.stringify({ left: Math.round(rr.left), top: Math.round(rr.top) })); } catch (_) {}
       };
       document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
       e.preventDefault();

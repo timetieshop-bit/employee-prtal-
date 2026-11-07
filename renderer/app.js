@@ -1349,25 +1349,56 @@ function bumpHeadUnread(c) {
     renderDock();
   }
 }
+let headPos = {};
+try { headPos = JSON.parse(localStorage.getItem('chatHeadPos') || '{}') || {}; } catch (_) { headPos = {}; }
+function saveHeadPos() { try { localStorage.setItem('chatHeadPos', JSON.stringify(headPos)); } catch (_) {} }
+function defaultHeadPos(idx) {
+  return { left: Math.max(12, window.innerWidth - 230), top: Math.max(12, window.innerHeight - 150 - idx * 58) };
+}
+function makeHeadDraggable(el, id) {
+  el.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.pill-close')) return;
+    const r = el.getBoundingClientRect();
+    const offX = e.clientX - r.left, offY = e.clientY - r.top;
+    let moved = false;
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+    el.classList.add('dragging');
+    const move = (ev) => {
+      moved = true; el.__dragged = true;
+      el.style.left = Math.min(Math.max(0, ev.clientX - offX), window.innerWidth - 60) + 'px';
+      el.style.top = Math.min(Math.max(0, ev.clientY - offY), window.innerHeight - 30) + 'px';
+    };
+    const up = () => {
+      el.classList.remove('dragging');
+      document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+      if (moved) { const rr = el.getBoundingClientRect(); headPos[id] = { left: Math.round(rr.left), top: Math.round(rr.top) }; saveHeadPos(); setTimeout(() => { el.__dragged = false; }, 0); }
+    };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  });
+}
 function renderDock() {
   if (!chatDock) return;
   chatDock.innerHTML = '';
-  openHeads.forEach((c) => {
+  openHeads.forEach((c, idx) => {
     const name = c.full_name || c.username || ('User ' + c.id);
     const unread = headUnread[c.id] || 0;
     const isActive = chatActive && chatActive.id === c.id && !chatPanel.hidden;
     const proc = (contactsById[c.id] || c).processing ? ' processing' : '';
     const el = document.createElement('div');
-    el.className = 'chat-head-chip' + (isActive ? ' active' : '') + (unread ? ' has-unread' : '') + proc;
+    el.className = 'chat-head-pill' + (isActive ? ' active' : '') + (unread ? ' has-unread' : '') + proc;
     el.innerHTML =
-      `<button class="chip-open" title="${escapeHtml(name)}">
+      `<button class="pill-open" title="${escapeHtml(name)}">
          <span class="avatar sm" style="background:${avatarColor(c.id)}">${escapeHtml(initials(name))}</span>
-         <span class="chip-name">${escapeHtml(name)}</span>
+         <span class="pill-name">${escapeHtml(name)}</span>
          ${unread ? `<span class="badge">${unread}</span>` : ''}
        </button>
-       <button class="chip-close" title="Close">×</button>`;
-    el.querySelector('.chip-open').addEventListener('click', () => openHead(c));
-    el.querySelector('.chip-close').addEventListener('click', (e) => { e.stopPropagation(); removeHead(c.id); });
+       <button class="pill-close" title="Close">×</button>`;
+    const pos = headPos[c.id] || defaultHeadPos(idx);
+    el.style.left = Math.min(Math.max(0, pos.left), window.innerWidth - 80) + 'px';
+    el.style.top = Math.min(Math.max(0, pos.top), window.innerHeight - 40) + 'px';
+    el.querySelector('.pill-open').addEventListener('click', () => { if (el.__dragged) { el.__dragged = false; return; } openHead(c); });
+    el.querySelector('.pill-close').addEventListener('click', (e) => { e.stopPropagation(); removeHead(c.id); });
+    makeHeadDraggable(el, c.id);
     chatDock.appendChild(el);
   });
 }

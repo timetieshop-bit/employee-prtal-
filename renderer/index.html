@@ -214,8 +214,10 @@
     <aside id="chat-panel" class="chat-panel" hidden>
       <div class="chat-head">
         <div class="chat-head-title"><b>Messages</b></div>
-        <button id="chat-min" class="icon-btn" title="Minimize — keep chatting while you work">—</button>
-        <button id="chat-close" class="icon-btn" title="Close">×</button>
+        <div class="chat-head-actions">
+          <button id="chat-min" class="icon-btn" title="Minimize — keep chatting while you work">—</button>
+          <button id="chat-close" class="icon-btn" title="Close">×</button>
+        </div>
       </div>
 
       <div class="chat-body">
@@ -322,6 +324,7 @@
 
       <!-- CONTACTS -->
       <div id="ph-pane-contacts" class="ph-pane" hidden>
+        <div class="ph-search"><span class="ph-search-ic">🔍</span><input id="phone-contact-search" type="text" placeholder="Search contacts" autocomplete="off" /></div>
         <div id="phone-contacts-list" class="ph-list"></div>
         <div id="phone-contacts-empty" class="ph-empty" hidden>No contacts yet.</div>
       </div>
@@ -335,10 +338,14 @@
       <!-- IN-CALL (covers the body while on a call) -->
       <div id="phone-incall" class="ph-incall" hidden>
         <div class="ph-incall-top">
-          <div id="phone-incall-ava" class="ph-ava-lg">#</div>
-          <div id="phone-peer" class="ph-incall-peer">—</div>
-          <div id="phone-state" class="ph-incall-state">Calling…</div>
-          <div id="phone-timer" class="ph-incall-timer">00:00</div>
+          <div class="ph-incall-id">
+            <div id="phone-incall-ava" class="ph-ava-lg">#</div>
+            <div id="phone-peer" class="ph-incall-peer">—</div>
+          </div>
+          <div class="ph-incall-right">
+            <div id="phone-state" class="ph-incall-state">Calling…</div>
+            <div id="phone-timer" class="ph-incall-timer">00:00</div>
+          </div>
         </div>
         <div class="ph-incall-mid">
           <div class="ph-incall-ctrls">

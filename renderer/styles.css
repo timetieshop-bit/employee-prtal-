@@ -1144,3 +1144,51 @@ html, body {
 
 /* Shift: show just the counter (no "Shift left" label) */
 .shift-label { display: none; }
+
+/* ===== Phone & chat tweaks (v0.9.7) ===== */
+
+/* Phone panel draggable */
+.phone-panel .ph-head { cursor: grab; user-select: none; }
+.phone-panel .ph-head.dragging { cursor: grabbing; }
+.phone-panel.floating { right: auto; bottom: auto; top: auto; }
+
+/* Compact in-call header: avatar+name top-left, state+timer top-right */
+.ph-incall-top { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; width: 100%; margin-top: 0; }
+.ph-incall-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ph-ava-lg { width: 42px; height: 42px; font-size: 15px; }
+.ph-incall-peer { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.ph-incall-right { text-align: right; flex: 0 0 auto; line-height: 1.2; }
+.ph-incall-state { font-size: 11.5px; color: var(--muted); }
+.ph-incall-timer { font-size: 15px; color: var(--accent); font-weight: 600; }
+/* Freed vertical space → larger, nicer dialpad */
+.ph-incall-ctrls { margin-top: 12px; }
+.dtmf-pad { gap: 6px; }
+.dtmf-pad button { height: 36px; font-size: 16px; border-radius: 10px; }
+
+/* Contacts search */
+#ph-pane-contacts { overflow: hidden; }
+#ph-pane-contacts .ph-list { flex: 1; overflow-y: auto; }
+.ph-search { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; margin: 2px 2px 8px; flex: 0 0 auto; }
+.ph-search-ic { font-size: 12px; opacity: .55; }
+.ph-search input { flex: 1; border: none; background: transparent; outline: none; font-size: 13px; color: var(--text); }
+
+/* Chat header: keep minimize + close together */
+.chat-head-title { flex: 1 1 auto; }
+.chat-head-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+
+/* Draggable name pills for minimized conversations (replaces round bubbles) */
+.chat-dock { position: fixed; inset: 0; z-index: 65; pointer-events: none; background: none; display: block; }
+.chat-head-pill { position: fixed; pointer-events: auto; display: flex; align-items: center;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(20,25,60,.25); padding: 3px 6px 3px 4px; cursor: grab; user-select: none;
+  animation: chipIn .16s ease; }
+.chat-head-pill.dragging { cursor: grabbing; }
+.chat-head-pill.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(26,115,232,.22), 0 6px 20px rgba(20,25,60,.25); }
+.chat-head-pill.has-unread:not(.active) { border-color: var(--accent); }
+.chat-head-pill.processing { border-color: var(--ok); box-shadow: 0 0 0 2px rgba(24,128,56,.3), 0 6px 20px rgba(20,25,60,.25); }
+.pill-open { display: flex; align-items: center; gap: 8px; border: none; background: transparent; cursor: inherit; padding: 2px 4px; font-size: 13px; font-weight: 600; color: var(--text); }
+.pill-name { white-space: nowrap; max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+.pill-open .badge { margin-left: 2px; }
+.pill-close { border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 6px; border-radius: 50%; }
+.pill-close:hover { color: var(--danger); }
+.chat-head-pill .avatar.sm { width: 30px; height: 30px; font-size: 12px; }
