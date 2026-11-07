@@ -1360,18 +1360,28 @@ function makeHeadDraggable(el, id) {
     if (e.target.closest('.pill-close')) return;
     const r = el.getBoundingClientRect();
     const offX = e.clientX - r.left, offY = e.clientY - r.top;
-    let moved = false;
-    try { el.setPointerCapture(e.pointerId); } catch (_) {}
-    el.classList.add('dragging');
+    const startX = e.clientX, startY = e.clientY;
+    let dragging = false;
+    el.__dragged = false;
     const move = (ev) => {
-      moved = true; el.__dragged = true;
+      if (!dragging) {
+        // Only begin dragging past a small threshold — a plain click still opens.
+        if (Math.abs(ev.clientX - startX) < 5 && Math.abs(ev.clientY - startY) < 5) return;
+        dragging = true; el.__dragged = true; el.classList.add('dragging');
+        try { el.setPointerCapture(e.pointerId); } catch (_) {}
+      }
       el.style.left = Math.min(Math.max(0, ev.clientX - offX), window.innerWidth - 60) + 'px';
       el.style.top = Math.min(Math.max(0, ev.clientY - offY), window.innerHeight - 30) + 'px';
     };
     const up = () => {
-      el.classList.remove('dragging');
       document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
-      if (moved) { const rr = el.getBoundingClientRect(); headPos[id] = { left: Math.round(rr.left), top: Math.round(rr.top) }; saveHeadPos(); setTimeout(() => { el.__dragged = false; }, 0); }
+      if (dragging) {
+        el.classList.remove('dragging');
+        try { el.releasePointerCapture(e.pointerId); } catch (_) {}
+        const rr = el.getBoundingClientRect();
+        headPos[id] = { left: Math.round(rr.left), top: Math.round(rr.top) }; saveHeadPos();
+        setTimeout(() => { el.__dragged = false; }, 0);
+      }
     };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
   });
