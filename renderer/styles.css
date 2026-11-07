@@ -1049,3 +1049,36 @@ html, body {
   display: grid; place-items: center; border: 2px solid var(--surface); }
 .shift-late { display: inline-flex; align-items: center; color: var(--danger); background: var(--danger-bg);
   border: 1px solid #f3c0bb; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+
+/* Labeled tool pills (Captions toggle / Chat / Sheets) */
+.pilltool { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text);
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s, color .15s, border-color .15s; white-space: nowrap; }
+.pilltool:hover { background: var(--hover); }
+.pilltool svg { width: 17px; height: 17px; }
+.pilltool .pill-tx { line-height: 1; }
+.pilltool .badge { position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 700;
+  display: grid; place-items: center; border: 2px solid var(--surface); }
+.pilltool.on { border-color: var(--accent); background: var(--chip-blue); color: var(--accent); }
+
+/* Captions on/off switch (no icon) */
+.cc-toggle { color: var(--muted); }
+.cc-switch { width: 30px; height: 17px; border-radius: 999px; background: #c9ced6; position: relative; transition: background .15s; flex: 0 0 auto; }
+.cc-knob { position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: left .15s; }
+.cc-toggle.on { color: var(--accent); border-color: var(--accent); background: var(--chip-blue); }
+.cc-toggle.on .cc-switch { background: var(--accent); }
+.cc-toggle.on .cc-knob { left: 15px; }
+
+/* In-call DTMF dialpad */
+.ph-incall { overflow-y: auto; }
+.ph-dtmf-wrap { width: 100%; margin-top: 16px; display: flex; flex-direction: column; gap: 9px; }
+.ph-dtmf-label { font-size: 11px; color: var(--muted); text-align: center; }
+.dtmf-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.dtmf-pad button { height: 40px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); font-size: 17px; font-weight: 600; color: var(--text); cursor: pointer; transition: .1s; }
+.dtmf-pad button:hover { background: var(--chip-blue); border-color: var(--accent); }
+.dtmf-pad button:active { transform: scale(.94); }
+.ph-dtmf-row { display: flex; gap: 6px; }
+.ph-dtmf-row input { flex: 1; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-size: 13px; outline: none; }
+.ph-dtmf-row input:focus { border-color: var(--accent); }
+.ph-dtmf-row button { border: none; background: var(--accent); color: #fff; border-radius: 10px; padding: 0 16px; font-weight: 600; cursor: pointer; }

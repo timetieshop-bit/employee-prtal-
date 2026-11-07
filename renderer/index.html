@@ -74,20 +74,18 @@
       <div class="spacer"></div>
 
       <!-- Quick-tool pills -->
-      <button id="bcc-btn" class="iconpill" hidden title="Live captions" aria-pressed="false" aria-label="Live captions">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <rect x="2.4" y="4.6" width="19.2" height="13.8" rx="3.6" fill="none" stroke="currentColor" stroke-width="1.7"/>
-          <line x1="6" y1="10" x2="10.5" y2="10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-          <line x1="12.5" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-          <line x1="6" y1="13.4" x2="13.5" y2="13.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-        </svg>
+      <button id="bcc-btn" class="pilltool cc-toggle" hidden title="Live captions on/off" aria-pressed="false" aria-label="Captions">
+        <span class="pill-tx">Captions</span>
+        <span class="cc-switch" aria-hidden="true"><span class="cc-knob"></span></span>
       </button>
-      <button id="btn-direct" class="iconpill" title="Messages" aria-label="Messages">
+      <button id="btn-direct" class="pilltool" title="Chat" aria-label="Chat">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H8l-4 3V6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        <span class="pill-tx">Chat</span>
         <span id="badge-direct" class="badge" hidden>0</span>
       </button>
-      <button id="btn-sheets" class="iconpill" hidden title="Sheets" aria-label="Sheets">
+      <button id="btn-sheets" class="pilltool" hidden title="Sheets" aria-label="Sheets">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><line x1="4" y1="10" x2="20" y2="10" stroke="currentColor" stroke-width="1.7"/><line x1="10" y1="10" x2="10" y2="20" stroke="currentColor" stroke-width="1.7"/></svg>
+        <span class="pill-tx">Sheets</span>
       </button>
       <div id="sheets-menu" class="sheets-menu" hidden></div>
 
@@ -345,11 +343,20 @@
         <div class="ph-incall-ctrls">
           <button id="phone-mute" class="ph-ctl"><span class="ctl-ic">🎙️</span><span class="ctl-tx">Mute</span></button>
           <button id="phone-hold" class="ph-ctl"><span class="ctl-ic">⏸</span><span class="ctl-tx">Hold</span></button>
-          <button id="phone-keypad-toggle" class="ph-ctl"><span class="ctl-ic">⌨</span><span class="ctl-tx">Keypad</span></button>
+          <button id="phone-keypad-toggle" class="ph-ctl active"><span class="ctl-ic">⌨</span><span class="ctl-tx">Dialpad</span></button>
         </div>
-        <div id="phone-dtmf-wrap" class="ph-dtmf-wrap" hidden>
-          <input id="phone-dtmf" class="phone-dtmf" type="text" inputmode="tel" placeholder="Tones e.g. 1234#" autocomplete="off" />
-          <button id="phone-dtmf-send" class="phone-dtmf-send" title="Send tones">Send</button>
+        <div id="phone-dtmf-wrap" class="ph-dtmf-wrap">
+          <div class="ph-dtmf-label">Send tones (IVR) — tap a digit, or type a sequence and Send</div>
+          <div id="phone-dtmf-pad" class="dtmf-pad">
+            <button data-dt="1">1</button><button data-dt="2">2</button><button data-dt="3">3</button>
+            <button data-dt="4">4</button><button data-dt="5">5</button><button data-dt="6">6</button>
+            <button data-dt="7">7</button><button data-dt="8">8</button><button data-dt="9">9</button>
+            <button data-dt="*">*</button><button data-dt="0">0</button><button data-dt="#">#</button>
+          </div>
+          <div class="ph-dtmf-row">
+            <input id="phone-dtmf" class="phone-dtmf" type="text" inputmode="tel" placeholder="e.g. 12345#" autocomplete="off" />
+            <button id="phone-dtmf-send" class="phone-dtmf-send" title="Send in order">Send</button>
+          </div>
         </div>
         <div class="ph-incall-end">
           <button id="phone-hangup" class="ph-end" title="End call"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11 11 0 0 0 3.4.55 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.3a1 1 0 0 1 1 1 11 11 0 0 0 .55 3.4 1 1 0 0 1-.25 1z"/></svg></button>

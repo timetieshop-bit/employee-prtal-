@@ -264,7 +264,9 @@
     $('phone-peer').textContent = contactName(peer) || peer || 'Call';
     $('phone-incall-ava').textContent = contactName(peer) ? initials(contactName(peer)) : '#';
     setState(state);
-    const dw = $('phone-dtmf-wrap'); if (dw) dw.hidden = true;
+    // Show the DTMF dialpad by default so IVR tones are one tap away.
+    const dw = $('phone-dtmf-wrap'); if (dw) dw.hidden = false;
+    const kt = $('phone-keypad-toggle'); if (kt) kt.classList.add('active');
     paintMute(); paintHold(); paintMini();
   }
   function endCall() {
@@ -449,7 +451,10 @@
 
   // In-call keypad toggle + DTMF
   const kpToggle = $('phone-keypad-toggle');
-  if (kpToggle) kpToggle.addEventListener('click', () => { const w = $('phone-dtmf-wrap'); if (w) w.hidden = !w.hidden; kpToggle.classList.toggle('active', w && !w.hidden); if (w && !w.hidden) $('phone-dtmf').focus(); });
+  if (kpToggle) kpToggle.addEventListener('click', () => { const w = $('phone-dtmf-wrap'); if (w) w.hidden = !w.hidden; kpToggle.classList.toggle('active', w && !w.hidden); });
+  // Dialpad: each tap sends that one tone immediately (one by one).
+  const dtmfPad = $('phone-dtmf-pad');
+  if (dtmfPad) dtmfPad.addEventListener('click', (e) => { const b = e.target.closest('button[data-dt]'); if (b) sendDtmfString(b.dataset.dt); });
   $('phone-dtmf-send').addEventListener('click', () => { sendDtmfString($('phone-dtmf').value); $('phone-dtmf').value = ''; });
   $('phone-dtmf').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendDtmfString(e.target.value); e.target.value = ''; } });
 })();
