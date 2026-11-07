@@ -1,0 +1,33 @@
+{
+  "name": "employee-portal",
+  "version": "0.9.1",
+  "description": "Employee portal - step 1: proxy, embedded browser, auth, shift timer",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.company.employeeportal",
+    "productName": "Employee Portal",
+    "files": ["**/*"],
+    "win": { "target": "nsis" },
+    "mac": { "target": "dmg" },
+    "linux": { "target": "AppImage" },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://employee-portal-server.publishsphere.online/updates/"
+      }
+    ]
+  }
+}

@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' blob: https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com 'wasm-unsafe-eval' 'unsafe-eval'; worker-src 'self' blob:; child-src 'self' blob:; connect-src 'self' wss: https: blob: data:; img-src 'self' data: blob: https:; media-src 'self' blob:;" />
+  <title>Employee Portal</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- LOGIN VIEW -->
+  <section id="login-view" class="login">
+    <div class="login-wrap">
+      <!-- Brand / marketing panel -->
+      <aside class="login-aside">
+        <div class="login-aside-top">
+          <div class="login-logo">EP</div>
+          <span class="login-aside-name">Employee Portal</span>
+        </div>
+        <div class="login-aside-mid">
+          <h2>Your workday starts here.</h2>
+        </div>
+        <span></span>
+      </aside>
+
+      <!-- Sign-in panel -->
+      <form id="login-form" class="login-panel">
+        <div class="login-head">
+          <h1>Welcome back</h1>
+          <p class="sub">Sign in to start your shift</p>
+        </div>
+
+        <label>Username
+          <input id="username" type="text" autocomplete="off" required />
+        </label>
+        <label>Password
+          <input id="password" type="password" autocomplete="off" required />
+        </label>
+
+        <button type="submit" id="login-submit">Sign in</button>
+        <p id="login-error" class="error" hidden>Invalid username or password</p>
+
+        <!-- Update progress (shown while checking / downloading an update) -->
+        <div id="update-box" class="update-box" hidden>
+          <div class="update-row">
+            <span id="update-status" class="update-status"></span>
+            <span id="update-pct" class="update-pct"></span>
+          </div>
+          <div class="update-track"><div id="update-fill" class="update-fill"></div></div>
+        </div>
+
+        <p id="app-version" class="app-version"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- CONSENT VIEW -->
+  <section id="consent-view" class="login" hidden>
+    <div class="card consent-card">
+      <h1>Welcome</h1>
+      <p id="consent-body" class="consent-body"></p>
+      <div class="consent-actions">
+        <button id="consent-decline" type="button" class="secondary-btn">Decline &amp; exit</button>
+        <button id="consent-agree" type="button">I agree</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- PORTAL VIEW -->
+  <section id="portal-view" class="portal" hidden>
+    <header class="topbar">
+      <div class="brand"><span class="brand-logo" aria-hidden="true">E</span><span class="brand-name">Employee Portal</span><span id="app-version-top" class="app-version-top"></span></div>
+      <div class="who">Signed in as <b id="who-name">—</b></div>
+      <!-- <span id="cam-indicator" class="cam-indicator" hidden><span class="cam-pulse"></span>Camera on</span> -->
+      <div class="spacer"></div>
+
+      <!-- Quick-tool pills -->
+      <button id="bcc-btn" class="iconpill" hidden title="Live captions" aria-pressed="false" aria-label="Live captions">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="2.4" y="4.6" width="19.2" height="13.8" rx="3.6" fill="none" stroke="currentColor" stroke-width="1.7"/>
+          <line x1="6" y1="10" x2="10.5" y2="10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          <line x1="12.5" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          <line x1="6" y1="13.4" x2="13.5" y2="13.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <button id="btn-direct" class="iconpill" title="Messages" aria-label="Messages">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H8l-4 3V6a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        <span id="badge-direct" class="badge" hidden>0</span>
+      </button>
+      <button id="btn-sheets" class="iconpill" hidden title="Sheets" aria-label="Sheets">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><line x1="4" y1="10" x2="20" y2="10" stroke="currentColor" stroke-width="1.7"/><line x1="10" y1="10" x2="10" y2="20" stroke="currentColor" stroke-width="1.7"/></svg>
+      </button>
+      <div id="sheets-menu" class="sheets-menu" hidden></div>
+
+      <button id="phone-btn" class="pillbtn" hidden title="Phone">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11 11 0 0 0 3.4.55 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.3a1 1 0 0 1 1 1 11 11 0 0 0 .55 3.4 1 1 0 0 1-.25 1z" fill="currentColor"/></svg>
+        <span class="pill-tx">Phone</span><span id="phone-dot" class="phone-dot" title="Not registered"></span>
+      </button>
+
+      <span id="shift-late" class="shift-late" hidden></span>
+      <div class="shift">
+        <span class="shift-label" id="shift-label">Shift left</span>
+        <span id="shift-clock" class="shift-clock">00:00:00</span>
+      </div>
+      <button id="minimize-btn" class="pillbtn" title="Minimize (keeps your work; needs the exit password)" hidden>Minimize</button>
+      <button id="exit-btn" class="pillbtn exit-btn" title="Exit the portal">Exit</button>
+    </header>
+
+    <!-- Tab strip -->
+    <div class="tabstrip">
+      <div id="tabs" class="tabs"></div>
+      <button id="tab-new" class="tab-new" title="New tab">+</button>
+    </div>
+
+    <div class="browserbar">
+      <button id="nav-back" class="nav-ic" title="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+      <button id="nav-forward" class="nav-ic" title="Forward"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+      <button id="nav-reload" class="nav-ic" title="Reload"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v6h6M20 20v-6h-6"/><path d="M20 10a8 8 0 0 0-14-3M4 14a8 8 0 0 0 14 3"/></svg></button>
+      <div class="addr-wrap">
+        <span class="addr-lock" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/></svg></span>
+        <input id="address" type="text" placeholder="Search Google or type a URL" autocomplete="off" spellcheck="false" />
+        <button id="addr-bm" class="addr-bm" title="Bookmark this page">
+          <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path d="M12 17.3l-5.4 3.1 1.4-6.1-4.7-4.1 6.2-.5L12 4l2.5 5.7 6.2.5-4.7 4.1 1.4 6.1z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Bookmarks bar -->
+    <div class="bookmarks-bar">
+      <div id="bm-list" class="bm-list"></div>
+    </div>
+
+
+    <!-- Policy warning banner (off-allowlist site) -->
+    <div id="warn-banner" class="warn-banner" hidden>
+      <span id="warn-text">This site isn't on the company allowlist. This visit has been logged.</span>
+      <button id="warn-dismiss">Dismiss</button>
+    </div>
+
+    <div class="browser-wrap">
+      <!-- Indeterminate loading bar for the active tab. -->
+      <div id="loadbar" class="loadbar" hidden></div>
+
+      <!-- Find-in-page bar (Ctrl+F) -->
+      <div id="find-bar" class="find-bar" hidden>
+        <input id="find-input" type="text" placeholder="Find in page" autocomplete="off" spellcheck="false" />
+        <span id="find-count" class="find-count"></span>
+        <button id="find-prev" class="find-btn" title="Previous">▲</button>
+        <button id="find-next" class="find-btn" title="Next">▼</button>
+        <button id="find-close" class="find-btn" title="Close">✕</button>
+      </div>
+
+      <!-- One <webview> per tab is created here at runtime. -->
+      <div id="views" class="views"></div>
+
+      <!-- Live caption overlay for the in-app browser (Deepgram). -->
+      <div id="bcc-bar" class="bcc-bar" hidden>
+        <div class="bcc-head">
+          <span class="bcc-title">Live captions</span>
+          <span id="bcc-status" class="bcc-status">starting…</span>
+          <button id="bcc-min" class="bcc-ic" title="Minimize">—</button>
+          <button id="bcc-close" class="bcc-ic" title="Turn off captions">✕</button>
+        </div>
+        <div class="bcc-text"><div class="bcc-line"><span id="bcc-final"></span><span id="bcc-partial" class="bcc-partial"></span></div></div>
+      </div>
+      <!-- Collapsed captions pill (shown when minimized / idle; captions keep running) -->
+      <button id="bcc-pill" class="bcc-pill" hidden title="Show captions">
+        <span class="bcc-pill-ic">💬</span><span id="bcc-pill-tx">Captions</span>
+      </button>
+
+      <!-- Blocked overlay -->
+      <div id="blocked-overlay" class="blocked-overlay" hidden>
+        <div class="blocked-card">
+          <h2>Site blocked</h2>
+          <p id="blocked-url" class="mono"></p>
+          <p class="muted">This website is blocked by company policy.</p>
+          <button id="blocked-back">Go back</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- In-app new-message notification card (all roles) -->
+    <div id="msg-toast" class="msg-toast" hidden>
+      <div class="msg-toast-icon">💬</div>
+      <div class="msg-toast-main">
+        <div id="msg-toast-title" class="msg-toast-title"></div>
+        <div id="msg-toast-body" class="msg-toast-body"></div>
+      </div>
+      <div class="msg-toast-open">Open</div>
+    </div>
+
+    <!-- Home-screen queue banner (processors) -->
+    <div id="queue-banner" class="queue-banner" hidden></div>
+    <!-- Home-screen "you snoozed a sale" countdown (processors) -->
+    <div id="wait-banner" class="wait-banner" hidden></div>
+
+    <!-- Home-screen incoming-sale alert (processors) -->
+    <div id="sale-alert" class="sale-alert" hidden>
+      <div class="sale-alert-card">
+        <div class="sale-alert-head"><span class="sale-alert-badge">NEW SALE</span>
+          <span id="sale-alert-count" class="sale-countdown"></span></div>
+        <div class="sale-alert-from" id="sale-alert-from"></div>
+        <div class="sale-alert-body" id="sale-alert-body"></div>
+        <div id="sale-alert-more" class="sale-alert-more" hidden></div>
+        <div class="sale-alert-actions">
+          <button id="sale-alert-process" class="sale-btn process">Processing</button>
+          <div class="wait-seg" id="sale-alert-waitseg" data-secs="30">
+            <button type="button" data-secs="30" class="active">30s</button>
+            <button type="button" data-secs="60">1 min</button>
+          </div>
+          <button id="sale-alert-wait" class="sale-btn wait">Wait</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHAT PANEL -->
+    <aside id="chat-panel" class="chat-panel" hidden>
+      <div class="chat-head">
+        <div class="chat-head-title"><b>Messages</b></div>
+        <button id="chat-min" class="icon-btn" title="Minimize — keep chatting while you work">—</button>
+        <button id="chat-close" class="icon-btn" title="Close">×</button>
+      </div>
+
+      <div class="chat-body">
+        <!-- Master: contact list (employees, processors, admins) -->
+        <div class="chat-list-pane">
+          <div id="chat-list" class="chat-list"></div>
+          <div id="chat-list-empty" class="chat-empty" hidden>
+            <div class="chat-empty-icon">👤</div>
+            <p>Nothing here yet.</p>
+          </div>
+        </div>
+
+        <!-- Detail: conversation -->
+        <div class="chat-convo-pane">
+          <div class="chat-convo-head">
+            <button id="chat-back" class="icon-btn chat-back" title="Back">‹</button>
+            <div id="chat-convo-av" class="avatar-wrap"><div id="chat-convo-avatar" class="avatar"></div></div>
+            <div class="chat-convo-meta">
+              <b id="chat-with-name">—</b>
+              <small id="chat-with-role" class="muted"></small>
+            </div>
+            <button id="work-toggle" class="work-toggle" hidden></button>
+          </div>
+
+          <!-- #sale hint for employees chatting with a taker -->
+          <div id="sale-hint" class="sale-hint" hidden></div>
+          <!-- Active sale cards for this conversation -->
+          <div id="group-sales" class="group-sales"></div>
+          <div id="chat-messages" class="chat-messages"></div>
+
+          <form id="chat-form" class="chat-input">
+            <button type="button" id="sale-compose-btn" class="sale-compose-btn" title="Start a sale" hidden>#sale</button>
+            <textarea id="chat-text" placeholder="Type message here" autocomplete="off" maxlength="2000" rows="1"></textarea>
+            <button type="submit" class="chat-send" title="Send" aria-label="Send">➤</button>
+          </form>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Minimized conversation dock (Messenger-style, up to 3) -->
+    <div id="chat-dock" class="chat-dock"></div>
+  </section>
+
+  <!-- EXIT PASSWORD MODAL -->
+  <div id="exit-modal" class="modal" hidden>
+    <form id="exit-form" class="exit-card">
+      <h2 id="exit-title">Enter exit password</h2>
+      <p class="muted" id="exit-sub">This confirms you're intentionally closing the portal.</p>
+      <input id="exit-pw" type="password" placeholder="Exit password" autocomplete="off" />
+      <p id="exit-error" class="error" hidden>Incorrect exit password.</p>
+      <div class="exit-actions">
+        <button type="button" id="exit-cancel" class="secondary-btn">Cancel</button>
+        <button type="submit">Confirm</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- HTTP auth prompt (site 401, e.g. VICIdial admin) -->
+  <div id="auth-modal" class="modal" hidden>
+    <form id="auth-form" class="exit-card">
+      <h2>Sign in</h2>
+      <p class="muted" id="auth-sub"></p>
+      <input id="auth-user" type="text" placeholder="Username" autocomplete="off" />
+      <input id="auth-pass" type="password" placeholder="Password" autocomplete="off" />
+      <div class="exit-actions">
+        <button type="button" id="auth-cancel" class="secondary-btn">Cancel</button>
+        <button type="submit">Sign in</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- SOFTPHONE PANEL (real-dialer layout, fixed height) -->
+  <aside id="phone-panel" class="phone-panel" hidden>
+    <div class="ph-head">
+      <div class="ph-head-info">
+        <div class="ph-head-title" id="phone-title">Phone</div>
+        <div class="ph-head-status" id="phone-status">Connecting…</div>
+      </div>
+      <span class="ph-reg" id="phone-reg"><span class="phone-dot" title="Not registered"></span><span id="phone-reg-tx">…</span></span>
+      <button id="phone-min-btn" class="ph-ic-sm" title="Minimize">—</button>
+      <button id="phone-close" class="ph-ic-sm" title="Close">✕</button>
+    </div>
+
+    <div class="ph-body">
+      <!-- KEYPAD -->
+      <div id="ph-pane-keypad" class="ph-pane">
+        <input id="phone-number" class="ph-num" type="text" inputmode="tel" placeholder="Enter a number" autocomplete="off" />
+        <div id="phone-keypad" class="keypad">
+          <button data-k="1">1<small>&nbsp;</small></button><button data-k="2">2<small>ABC</small></button><button data-k="3">3<small>DEF</small></button>
+          <button data-k="4">4<small>GHI</small></button><button data-k="5">5<small>JKL</small></button><button data-k="6">6<small>MNO</small></button>
+          <button data-k="7">7<small>PQRS</small></button><button data-k="8">8<small>TUV</small></button><button data-k="9">9<small>WXYZ</small></button>
+          <button data-k="*">*<small>&nbsp;</small></button><button data-k="0">0<small>+</small></button><button data-k="#">#<small>&nbsp;</small></button>
+        </div>
+        <div class="ph-dial-row">
+          <span class="ph-dial-spacer"></span>
+          <button id="phone-call" class="ph-call" title="Call"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11 11 0 0 0 3.4.55 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.3a1 1 0 0 1 1 1 11 11 0 0 0 .55 3.4 1 1 0 0 1-.25 1z"/></svg></button>
+          <button id="phone-back" class="ph-mini-ic" title="Backspace">⌫</button>
+        </div>
+        <button id="phone-sim" class="ph-sim" title="Switch caller ID">
+          <span class="ph-sim-ic">📤</span><span class="ph-sim-txt">From: <b id="phone-sim-name">—</b><span id="phone-sim-num" class="ph-sim-num"></span></span><span class="ph-sim-chev">▾</span>
+        </button>
+        <div id="phone-sim-menu" class="ph-sim-menu" hidden></div>
+      </div>
+
+      <!-- CONTACTS -->
+      <div id="ph-pane-contacts" class="ph-pane" hidden>
+        <div id="phone-contacts-list" class="ph-list"></div>
+        <div id="phone-contacts-empty" class="ph-empty" hidden>No contacts yet.</div>
+      </div>
+
+      <!-- RECENTS -->
+      <div id="ph-pane-recents" class="ph-pane" hidden>
+        <div id="phone-recents-list" class="ph-list"></div>
+        <div id="phone-recents-empty" class="ph-empty" hidden>No recent calls.</div>
+      </div>
+
+      <!-- IN-CALL (covers the body while on a call) -->
+      <div id="phone-incall" class="ph-incall" hidden>
+        <div class="ph-incall-top">
+          <div id="phone-incall-ava" class="ph-ava-lg">#</div>
+          <div id="phone-peer" class="ph-incall-peer">—</div>
+          <div id="phone-state" class="ph-incall-state">Calling…</div>
+          <div id="phone-timer" class="ph-incall-timer">00:00</div>
+        </div>
+        <div class="ph-incall-ctrls">
+          <button id="phone-mute" class="ph-ctl"><span class="ctl-ic">🎙️</span><span class="ctl-tx">Mute</span></button>
+          <button id="phone-hold" class="ph-ctl"><span class="ctl-ic">⏸</span><span class="ctl-tx">Hold</span></button>
+          <button id="phone-keypad-toggle" class="ph-ctl"><span class="ctl-ic">⌨</span><span class="ctl-tx">Keypad</span></button>
+        </div>
+        <div id="phone-dtmf-wrap" class="ph-dtmf-wrap" hidden>
+          <input id="phone-dtmf" class="phone-dtmf" type="text" inputmode="tel" placeholder="Tones e.g. 1234#" autocomplete="off" />
+          <button id="phone-dtmf-send" class="phone-dtmf-send" title="Send tones">Send</button>
+        </div>
+        <div class="ph-incall-end">
+          <button id="phone-hangup" class="ph-end" title="End call"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11 11 0 0 0 3.4.55 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.3a1 1 0 0 1 1 1 11 11 0 0 0 .55 3.4 1 1 0 0 1-.25 1z"/></svg></button>
+        </div>
+      </div>
+    </div><!-- /.ph-body -->
+
+    <!-- BOTTOM TABS -->
+    <div class="ph-tabs">
+      <button class="ph-tab active" data-pane="keypad" title="Keypad">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="6" r="1.5"/><circle cx="12" cy="6" r="1.5"/><circle cx="19" cy="6" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/><circle cx="5" cy="18" r="1.5"/><circle cx="12" cy="18" r="1.5"/><circle cx="19" cy="18" r="1.5"/></svg>
+        <span>Keypad</span>
+      </button>
+      <button class="ph-tab" data-pane="contacts" title="Contacts">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 20a7 7 0 0 1 14 0" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        <span>Contacts</span>
+      </button>
+      <button class="ph-tab" data-pane="recents" title="Recents">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span>Recents</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Minimized call bar: compact controls while working elsewhere -->
+  <div id="phone-mini" class="phone-mini" hidden>
+    <span class="phone-mini-ic">📞</span>
+    <div class="phone-mini-main">
+      <div id="phone-mini-peer" class="phone-mini-peer">Phone</div>
+      <div id="phone-mini-timer" class="phone-mini-timer">00:00</div>
+    </div>
+    <button id="phone-mini-mute" class="phone-mini-btn" title="Mute">🎙️</button>
+    <button id="phone-mini-hangup" class="phone-mini-btn danger" title="End call">📵</button>
+    <button id="phone-mini-expand" class="phone-mini-btn" title="Open phone">▢</button>
+  </div>
+
+  <audio id="sip-remote" autoplay></audio>
+
+  <script src="camera.js"></script>
+  <script src="browser-captions.js"></script>
+  <script src="app.js"></script>
+  <!-- SIP.js loader (external file — CSP forbids inline scripts). -->
+  <script src="sip-loader.js"></script>
+  <script src="captions.js"></script>
+  <script src="native-audio.js"></script>
+  <script src="phone.js"></script>
+</body>
+</html>
