@@ -120,6 +120,28 @@
           <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path d="M12 17.3l-5.4 3.1 1.4-6.1-4.7-4.1 6.2-.5L12 4l2.5 5.7 6.2.5-4.7 4.1 1.4 6.1z"/></svg>
         </button>
       </div>
+      <button id="vault-btn" class="nav-ic" title="Saved passwords">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v4M15 12v3"/></svg>
+      </button>
+    </div>
+
+    <!-- Save-password prompt bar -->
+    <div id="vault-bar" class="vault-bar" hidden>
+      <span class="vault-bar-ic">🔑</span>
+      <div class="vault-bar-main">
+        <div class="vault-bar-title">Save password?</div>
+        <div id="vault-bar-sub" class="vault-bar-sub"></div>
+      </div>
+      <button id="vault-save" class="vault-bar-save">Save</button>
+      <button id="vault-not" class="vault-bar-not">Not now</button>
+    </div>
+
+    <!-- Saved-passwords manager -->
+    <div id="vault-manager" class="vault-manager" hidden>
+      <div class="vault-mgr-head"><b>Saved passwords</b><button id="vault-mgr-close" class="icon-btn">×</button></div>
+      <div id="vault-mgr-list" class="vault-mgr-list"></div>
+      <p id="vault-mgr-empty" class="empty" hidden>No saved passwords yet. Sign in to a site and choose “Save”.</p>
+      <p class="vault-mgr-note">Your passwords are private to you and stored encrypted on the server.</p>
     </div>
 
     <!-- Bookmarks bar -->

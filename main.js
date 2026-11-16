@@ -1036,6 +1036,8 @@ ipcMain.handle('auth:login', async (_event, { username, password }) => {
       shiftStartsAt: data.shiftStartsAt, // scheduled start — needed for "Late by…"
       shiftEndsAt: data.shiftEndsAt,
       shiftName: data.shiftName,
+      lateMinutes: data.lateMinutes,     // server-fixed lateness (first login)
+      awayMinutes: data.awayMinutes,     // total time stepped out this shift-day
       serverNow: data.serverNow,
       hasExitPassword: !!data.hasExitPassword,
       needConsent: !!data.needConsent,
@@ -1069,6 +1071,31 @@ ipcMain.handle('sheet:url', async (_e, id) => {
     return { ok: false, error: String(e && e.message || e) };
   }
 });
+
+// ---- Per-user password vault (encrypted server-side) ----
+let pendingVault = null; // creds captured from a login form, awaiting the user's "Save"
+ipcMain.handle('vault:lookup', async (_e, host) => {
+  try {
+    const r = await apiCall('credentials.php?host=' + encodeURIComponent(String(host || '')), 'GET');
+    return (r && r.creds) || [];
+  } catch (_) { return []; }
+});
+ipcMain.on('vault:offer', (_e, data) => {
+  if (!data || !data.host || !data.password) return;
+  pendingVault = { host: String(data.host), username: String(data.username || ''), password: String(data.password) };
+  // Tell the portal UI to show a "Save password?" bar — WITHOUT the password.
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.webContents.send('vault:offer', { host: pendingVault.host, username: pendingVault.username }); } catch (_) {}
+  }
+});
+ipcMain.handle('vault:save', async () => {
+  if (!pendingVault) return { ok: false };
+  try { const r = await apiCall('credentials.php', 'POST', pendingVault); pendingVault = null; return r; }
+  catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+});
+ipcMain.handle('vault:dismiss', () => { pendingVault = null; return { ok: true }; });
+ipcMain.handle('vault:list', async () => { try { return await apiCall('credentials.php', 'GET'); } catch (_) { return { ok: false, items: [] }; } });
+ipcMain.handle('vault:delete', async (_e, id) => { try { return await apiCall('credentials.php', 'DELETE', { id: parseInt(id, 10) }); } catch (_) { return { ok: false }; } });
 
 // ---- Native (UDP) SIP softphone: direct-to-trunk calling, no WSS/VPS ----
 let nativePhone = null;

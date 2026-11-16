@@ -268,6 +268,78 @@ try { window.__EP_APP = true; window.__EMPLOYEE_PORTAL = true; } catch (_) {}
 })();
 
 // ============================================================
+// Per-user password vault: autofill this user's saved login for the site, and
+// offer to save a new/updated password when they sign in. Passwords live
+// encrypted on the server; nothing is stored in the page or on disk here.
+// ============================================================
+(() => {
+  let ipc = null;
+  try { ipc = require('electron').ipcRenderer; } catch (_) { return; }
+  const host = (location.hostname || '').toLowerCase();
+  if (!host) return;
+
+  const isPassword = (el) => el && el.tagName === 'INPUT' && String(el.type || '').toLowerCase() === 'password';
+  function findUsernameField(pwField) {
+    const scope = pwField.form || document;
+    const inputs = Array.from(scope.querySelectorAll('input'));
+    const pwIdx = inputs.indexOf(pwField);
+    const cands = inputs.filter((el, i) => (pwIdx === -1 || i < pwIdx) && ['text', 'email', 'tel', ''].includes(String(el.type || 'text').toLowerCase()));
+    const hint = /user|email|login|account|phone|mobile|identifier/i;
+    let best = null;
+    for (const el of cands) {
+      const key = (el.name || '') + ' ' + (el.id || '') + ' ' + (el.getAttribute('autocomplete') || '');
+      if (hint.test(key)) best = el;
+    }
+    return best || cands[cands.length - 1] || null;
+  }
+  function setVal(el, v) {
+    if (!el) return;
+    try {
+      const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+      setter.call(el, v);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (_) { try { el.value = v; } catch (_) {} }
+  }
+
+  let filled = false;
+  async function tryAutofill() {
+    if (filled) return;
+    const pw = document.querySelector('input[type="password"]');
+    if (!pw) return;
+    let creds = [];
+    try { creds = await ipc.invoke('vault:lookup', host); } catch (_) {}
+    if (!creds || !creds.length) return;
+    const c = creds[0];
+    const uf = findUsernameField(pw);
+    if (uf && c.username) setVal(uf, c.username);
+    setVal(pw, c.password);
+    filled = true;
+  }
+
+  function capture(scope) {
+    try {
+      const pw = scope && scope.querySelector ? scope.querySelector('input[type="password"]') : null;
+      if (!pw || !pw.value) return;
+      const uf = findUsernameField(pw);
+      ipc.send('vault:offer', { host, username: uf ? uf.value : '', password: pw.value });
+    } catch (_) {}
+  }
+  // Save on submit, and on Enter pressed inside a password field (button logins).
+  window.addEventListener('submit', (e) => { if (e.target) capture(e.target); }, true);
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && isPassword(e.target)) { const f = e.target.form || document; setTimeout(() => capture(f), 0); }
+  }, true);
+
+  const run = () => tryAutofill();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run, { once: true });
+  else run();
+  setTimeout(tryAutofill, 1500); // SPA login forms that render late
+  setTimeout(tryAutofill, 3500);
+})();
+
+// ============================================================
 // Hide the Google top-bar account controls (Gmail / Images / apps grid /
 // Sign in) on Google pages — account sign-in isn't available in the portal, so
 // these just confuse. Search itself is untouched.

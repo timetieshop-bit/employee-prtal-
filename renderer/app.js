@@ -240,6 +240,7 @@ let hasExitPassword = false;
 let shiftEndMs = 0;
 
 function enterPortal(res) {
+  loggedInUser = res.username || '';
   whoName.textContent = res.fullName || res.username;
   policy = res.policy || policy;
   features = res.features || features;
@@ -251,8 +252,9 @@ function enterPortal(res) {
   portalView.hidden = false;
 
   // Only now does the embedded browser start loading — nothing is fetched
-  // through the proxy until the employee has signed in.
-  if (!tabs.length) createTab(HOME_URL);
+  // through the proxy until the employee has signed in. Restore the tabs this
+  // user had open last time so they don't have to reopen everything.
+  if (!tabs.length) restoreTabs();
 
   startShiftClock(res);
   startHeartbeat();
@@ -304,16 +306,16 @@ function startShiftClock(res) {
   shiftEndMs = localEnd;
   window.portal.setShiftEnd(localEnd);
 
-  // "Late by…" — how far past the scheduled start the employee signed in.
+  // "Late by…" — server-computed, fixed at the FIRST login of the shift-day.
+  // Re-logins after stepping out add to "away", not to lateness.
   const lateEl = document.getElementById('shift-late');
-  const startMs = toMs(res.shiftStartsAt);
-  const lateMs = startMs ? (toMs(res.serverNow) - startMs) : 0;
-  if (lateMs > 60 * 1000) {
-    lateEl.textContent = '⏱ Late by ' + fmtHM(lateMs);
-    lateEl.hidden = false;
-  } else {
-    lateEl.hidden = true;
-  }
+  const lateMin = Math.max(0, Number(res.lateMinutes) || 0);
+  const awayMin = Math.max(0, Number(res.awayMinutes) || 0);
+  const parts = [];
+  if (lateMin >= 1) parts.push('⏱ Late ' + fmtMin(lateMin));
+  if (awayMin >= 1) parts.push('⇠ Away ' + fmtMin(awayMin));
+  if (parts.length) { lateEl.textContent = parts.join('  ·  '); lateEl.hidden = false; }
+  else lateEl.hidden = true;
 
   if (shiftTimer) clearInterval(shiftTimer);
   let endedNotified = false;
@@ -351,6 +353,31 @@ function fmtHM(ms) {
   const min = Math.floor(ms / 60000);
   const h = Math.floor(min / 60), m = min % 60;
   return h ? `${h}h ${m}m` : `${m}m`;
+}
+function fmtMin(min) {
+  min = Math.max(0, Math.floor(min));
+  const h = Math.floor(min / 60), m = min % 60;
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
+// ---------- Open-tab persistence (restore the workspace on next login) ----------
+let loggedInUser = '';
+function tabsKey() { return 'openTabs:' + loggedInUser; }
+function persistTabs() {
+  if (!loggedInUser) return;
+  try {
+    // Only ordinary web tabs — never the protected (server-assigned sheet) tabs,
+    // whose URLs are resolved per-session and must stay hidden.
+    const urls = tabs.filter((t) => !t.protected && t.url && /^https?:/i.test(t.url)).map((t) => t.url);
+    localStorage.setItem(tabsKey(), JSON.stringify(urls.slice(0, 15)));
+  } catch (_) {}
+}
+function restoreTabs() {
+  let urls = [];
+  try { urls = JSON.parse(localStorage.getItem(tabsKey()) || '[]') || []; } catch (_) {}
+  urls = (Array.isArray(urls) ? urls : []).filter((u) => /^https?:/i.test(u)).slice(0, 15);
+  if (urls.length) urls.forEach((u, i) => createTab(u, i === 0));
+  else createTab(HOME_URL);
 }
 
 // ======================= TABS =======================
@@ -407,6 +434,7 @@ function createTab(url = HOME_URL, activate = true, opts = {}) {
     tab.url = e.url;
     if (id === activeId) { applyAddrForTab(tab); refreshStar(); }
     if (!tab.protected) checkSiteFor(tab, e.url);
+    persistTabs();
   });
   view.addEventListener('did-navigate-in-page', (e) => {
     tab.url = e.url;
@@ -420,6 +448,7 @@ function createTab(url = HOME_URL, activate = true, opts = {}) {
 
   view.src = url;
   if (activate) activateTab(id); else renderTabs();
+  if (!tab.protected) persistTabs();
   return tab;
 }
 
@@ -461,6 +490,7 @@ function closeTab(id) {
   if (idx === -1) return;
   const [t] = tabs.splice(idx, 1);
   try { t.view.remove(); } catch (_) {}
+  persistTabs();
   if (!tabs.length) { createTab(HOME_URL); return; } // always keep at least one
   if (activeId === id) activateTab(tabs[Math.max(0, idx - 1)].id);
   else renderTabs();
@@ -864,6 +894,52 @@ refreshStar();
     ro.observe(bar);
   }
   applySavedBox();
+})();
+
+// ---------- Password vault: save bar + manager ----------
+(function () {
+  if (!window.portal) return;
+  const bar = document.getElementById('vault-bar');
+  const btn = document.getElementById('vault-btn');
+  const mgr = document.getElementById('vault-manager');
+
+  if (portal.onVaultOffer) portal.onVaultOffer((d) => {
+    if (!bar) return;
+    const sub = document.getElementById('vault-bar-sub');
+    if (sub) sub.textContent = (d.username ? d.username + ' — ' : '') + d.host;
+    bar.hidden = false;
+  });
+  const hideBar = () => { if (bar) bar.hidden = true; };
+  const saveBtn = document.getElementById('vault-save');
+  if (saveBtn) saveBtn.addEventListener('click', async () => { try { await portal.vaultSave(); } catch (_) {} hideBar(); });
+  const notBtn = document.getElementById('vault-not');
+  if (notBtn) notBtn.addEventListener('click', async () => { try { await portal.vaultDismiss(); } catch (_) {} hideBar(); });
+
+  async function loadMgr() {
+    const list = document.getElementById('vault-mgr-list');
+    const empty = document.getElementById('vault-mgr-empty');
+    if (!list) return;
+    let res = { items: [] };
+    try { res = await portal.vaultList(); } catch (_) {}
+    const items = (res && res.items) || [];
+    list.innerHTML = '';
+    if (empty) empty.hidden = items.length > 0;
+    items.forEach((it) => {
+      const row = document.createElement('div');
+      row.className = 'vault-mgr-row';
+      row.innerHTML = '<div class="vault-mgr-site"><b></b><span></span></div>';
+      row.querySelector('b').textContent = it.host;
+      row.querySelector('span').textContent = it.username || '(no username)';
+      const del = document.createElement('button');
+      del.className = 'vault-mgr-del'; del.textContent = 'Remove';
+      del.addEventListener('click', async () => { try { await portal.vaultDelete(it.id); } catch (_) {} loadMgr(); });
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+  if (btn) btn.addEventListener('click', () => { if (!mgr) return; const show = mgr.hidden; mgr.hidden = !show; if (show) loadMgr(); });
+  const close = document.getElementById('vault-mgr-close');
+  if (close) close.addEventListener('click', () => { if (mgr) mgr.hidden = true; });
 })();
 
 // ---- Find in page (Ctrl+F) ----

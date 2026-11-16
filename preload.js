@@ -48,6 +48,13 @@ contextBridge.exposeInMainWorld('portal', {
   onSheetsList: (cb) => ipcRenderer.on('sheets:list', (_e, list) => cb(list || [])),
   sheetUrl: (id) => ipcRenderer.invoke('sheet:url', id),
 
+  // Per-user password vault (encrypted server-side).
+  onVaultOffer: (cb) => ipcRenderer.on('vault:offer', (_e, d) => cb(d)),
+  vaultSave: () => ipcRenderer.invoke('vault:save'),
+  vaultDismiss: () => ipcRenderer.invoke('vault:dismiss'),
+  vaultList: () => ipcRenderer.invoke('vault:list'),
+  vaultDelete: (id) => ipcRenderer.invoke('vault:delete', id),
+
   // Native (UDP) softphone — direct-to-trunk, no WSS. Audio bridged over IPC.
   nativeStart: (cfg) => ipcRenderer.invoke('native:start', cfg),
   nativeCall: (num) => ipcRenderer.invoke('native:call', num),
