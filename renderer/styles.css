@@ -1254,9 +1254,8 @@ html, body {
 .vault-mgr-note { font-size: 11px; color: var(--muted); margin: 8px 2px 0; }
 
 /* ===== Shift countdown + late/away as pills matching the toolbar buttons ===== */
-.shift { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 13px;
+.shift { display: inline-flex; align-items: center; height: 34px; padding: 0 14px;
   border: 1px solid var(--border); border-radius: 999px; background: var(--surface); }
-.shift::before { content: "⏳"; font-size: 13px; line-height: 1; }
 .shift-clock { background: none; padding: 0; margin: 0; border-radius: 0; font-size: 14px; font-weight: 700;
   color: var(--accent); font-variant-numeric: tabular-nums; }
 .shift-clock.done { color: var(--danger); background: none; }
