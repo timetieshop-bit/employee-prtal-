@@ -381,6 +381,19 @@ function restoreTabs() {
 }
 
 // ======================= TABS =======================
+// The bookmarks bar is shown ONLY on a new/home tab, so staff open bookmarks in a
+// fresh tab rather than navigating away from the page they're working on.
+function isHomeUrl(u) {
+  if (!u) return true;
+  const s = String(u).replace(/\/$/, '');
+  return s === HOME_URL || s === 'https://www.google.com' || s === 'about:blank';
+}
+function updateBookmarksBar() {
+  const bar = document.getElementById('bookmarks-bar');
+  if (!bar) return;
+  const t = activeTab();
+  bar.hidden = !(t && isHomeUrl(t.url));
+}
 function activeTab() { return tabs.find((t) => t.id === activeId) || null; }
 function activeView() { const t = activeTab(); return t ? t.view : null; }
 
@@ -432,13 +445,13 @@ function createTab(url = HOME_URL, activate = true, opts = {}) {
   });
   view.addEventListener('did-navigate', (e) => {
     tab.url = e.url;
-    if (id === activeId) { applyAddrForTab(tab); refreshStar(); }
+    if (id === activeId) { applyAddrForTab(tab); refreshStar(); updateBookmarksBar(); }
     if (!tab.protected) checkSiteFor(tab, e.url);
     persistTabs();
   });
   view.addEventListener('did-navigate-in-page', (e) => {
     tab.url = e.url;
-    if (id === activeId) { applyAddrForTab(tab); refreshStar(); }
+    if (id === activeId) { applyAddrForTab(tab); refreshStar(); updateBookmarksBar(); }
   });
   view.addEventListener('found-in-page', (e) => {
     if (id === activeId && e.result) updateFindCount(e.result);
@@ -473,6 +486,7 @@ function activateTab(id) {
   for (const t of tabs) t.view.style.display = (t.id === id ? 'flex' : 'none');
   const t = activeTab();
   applyAddrForTab(t);
+  updateBookmarksBar();
   if (typeof refreshStar === 'function' && !(t && t.protected)) refreshStar();
   hideWarn();
   document.getElementById('blocked-overlay').hidden = true;
