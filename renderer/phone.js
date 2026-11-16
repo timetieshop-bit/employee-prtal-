@@ -347,7 +347,59 @@
         pcConfig: { iceServers: cfg.iceServers || [] },
         extraHeaders,
       });
+      // Force G.711 (PCMU) on our outgoing offer so SignalWire never transcodes
+      // from Opus 48kHz (which is billed per-minute). Only touches our local SDP;
+      // DTMF (telephone-event) is preserved so keypad tones still work.
+      try {
+        session.on('sdp', (e) => {
+          if (e && e.originator === 'local') {
+            try { e.sdp = preferG711(e.sdp); } catch (_) {}
+          }
+        });
+      } catch (_) {}
     } catch (e) { setStatus('Call failed'); endCall(); }
+  }
+
+  // Rewrite an SDP offer to advertise only G.711 (PCMU/PCMA) + DTMF, PCMU first.
+  // Removes Opus and any other audio codec so the far end can't pick one that
+  // forces transcoding. Returns the original SDP unchanged if no G.711 is present
+  // (so we never accidentally break a call).
+  function preferG711(sdp) {
+    if (!sdp || sdp.indexOf('m=audio') === -1) return sdp;
+    const nl = sdp.indexOf('\r\n') !== -1 ? '\r\n' : '\n';
+    const lines = sdp.split(/\r?\n/);
+    const mIdx = lines.findIndex((l) => l.indexOf('m=audio') === 0);
+    if (mIdx === -1) return sdp;
+
+    // payload type -> codec name (lowercased)
+    const nameOf = {};
+    for (const l of lines) {
+      const m = l.match(/^a=rtpmap:(\d+)\s+([A-Za-z0-9.\-]+)\//);
+      if (m) nameOf[m[1]] = m[2].toLowerCase();
+    }
+
+    const mParts = lines[mIdx].split(' ');
+    const head = mParts.slice(0, 3); // "m=audio", port, proto
+    const pts = mParts.slice(3);
+
+    const pcmu = pts.filter((pt) => nameOf[pt] === 'pcmu');
+    const pcma = pts.filter((pt) => nameOf[pt] === 'pcma');
+    const dtmf = pts.filter((pt) => nameOf[pt] === 'telephone-event');
+    const g711 = pcmu.concat(pcma);
+    if (!g711.length) return sdp; // nothing to force — leave offer intact
+
+    const keep = g711.concat(dtmf);           // PCMU, PCMA, then DTMF
+    const keepSet = new Set(keep);
+
+    lines[mIdx] = head.concat(keep).join(' ');
+
+    // Drop rtpmap/fmtp/rtcp-fb lines belonging to removed payload types.
+    const out = lines.filter((l) => {
+      const m = l.match(/^a=(?:rtpmap|fmtp|rtcp-fb):(\d+)\b/);
+      if (m && !keepSet.has(m[1])) return false;
+      return true;
+    });
+    return out.join(nl);
   }
   function hangup() {
     if (isNative()) { try { window.portal.nativeHangup(); } catch (_) {} try { window.NativeAudio.stop(); } catch (_) {} endCall(); return; }
