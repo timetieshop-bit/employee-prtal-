@@ -81,6 +81,15 @@ class SipPhone extends EventEmitter {
     const onBound = () => {
       this.localPort = this.sock.address().port;
       this.emit('status', 'bound udp ' + this.localIp + ':' + this.localPort);
+      // Outbound-only trunks (eyeBeam-style, "Register with domain" unchecked):
+      // never REGISTER. Mark ready right away; each INVITE authenticates itself
+      // against the trunk's 401/407 challenge (handled in _onInviteResp).
+      if (this.cfg.register === false) {
+        this.registered = true;
+        this.emit('status', 'ready (outbound-only, no register)');
+        this.emit('registered');
+        return;
+      }
       this._regAuthTries = 0;
       this._armRegWatchdog();
       this.register();
@@ -130,7 +139,8 @@ class SipPhone extends EventEmitter {
     this.hangup();
     this._clearRegWatch();
     if (this.regTimer) clearInterval(this.regTimer);
-    if (this.registered) this._sendRegister(0); // unregister
+    // Only un-REGISTER if we actually registered (not in outbound-only mode).
+    if (this.registered && this.cfg.register !== false) this._sendRegister(0); // unregister
     setTimeout(() => { try { this.sock && this.sock.close(); } catch (_) {} }, 150);
     this.registered = false;
   }

@@ -42,6 +42,10 @@ contextBridge.exposeInMainWorld('portal', {
   phoneConfig: () => { try { return ipcRenderer.sendSync('phone:get'); } catch (_) { return null; } },
   onPhoneConfig: (cb) => ipcRenderer.on('phone:config', (_e, cfg) => cb(cfg)),
 
+  // Second phone config (UDP/eyeBeam trunk; null if Phone 2 is off for this user).
+  phone2Config: () => { try { return ipcRenderer.sendSync('phone2:get'); } catch (_) { return null; } },
+  onPhone2Config: (cb) => ipcRenderer.on('phone2:config', (_e, cfg) => cb(cfg)),
+
   // Google Sheets assigned to this user (names + ids only; the URL stays in the
   // main process and is resolved just-in-time via sheetUrl()).
   sheetsList: () => { try { return ipcRenderer.sendSync('sheets:get') || []; } catch (_) { return []; } },

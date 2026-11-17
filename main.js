@@ -52,6 +52,13 @@ function pushPhone() {
   }
 }
 
+let currentPhone2 = null; // second phone (UDP/eyeBeam trunk) config, or null
+function pushPhone2() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.webContents.send('phone2:config', currentPhone2); } catch (_) {}
+  }
+}
+
 // Google Sheets assigned to the signed-in user. Names + ids only — the URL is
 // NEVER kept here or sent to the renderer; it's resolved on demand via
 // sheet_url.php (see the 'sheet:url' handler) so the processor never sees it.
@@ -811,6 +818,10 @@ function startConfigPoll() {
       const before = JSON.stringify(currentPhone);
       currentPhone = res.phone || null;
       if (JSON.stringify(currentPhone) !== before) pushPhone();
+      // Second phone can also be toggled live from the admin panel.
+      const before2 = JSON.stringify(currentPhone2);
+      currentPhone2 = res.phone2 || null;
+      if (JSON.stringify(currentPhone2) !== before2) pushPhone2();
       // Sheets can be added/removed/renamed live from the admin panel.
       const sheetsBefore = JSON.stringify(currentSheets);
       const nextSheets = Array.isArray(res.sheets) ? res.sheets : [];
@@ -1022,6 +1033,8 @@ ipcMain.handle('auth:login', async (_event, { username, password }) => {
     applyFeatures(data.features || null); // content protection, app blocker, kiosk…
     currentPhone = data.phone || null;    // SIP softphone config (null if off)
     pushPhone();                          // hand it to the renderer right away
+    currentPhone2 = data.phone2 || null;  // second phone (UDP/eyeBeam) config
+    pushPhone2();
     currentSheets = Array.isArray(data.sheets) ? data.sheets : []; // names only
     pushSheets();
     startConfigPoll();                    // keep pulling changes from the server
@@ -1045,6 +1058,7 @@ ipcMain.handle('auth:login', async (_event, { username, password }) => {
       policy: currentPolicy,
       features: currentFeatures,
       phone: currentPhone,
+      phone2: currentPhone2,
       sheets: currentSheets,
     };
   } catch (err) {
@@ -1055,6 +1069,7 @@ ipcMain.handle('auth:login', async (_event, { username, password }) => {
 
 // Renderer asks for the current SIP config (on load / after reconnect).
 ipcMain.on('phone:get', (e) => { e.returnValue = currentPhone; });
+ipcMain.on('phone2:get', (e) => { e.returnValue = currentPhone2; });
 
 // Renderer asks for the current sheet list (names + ids only, no URLs).
 ipcMain.on('sheets:get', (e) => { e.returnValue = currentSheets; });

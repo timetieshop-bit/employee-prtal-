@@ -1263,3 +1263,20 @@ html, body {
 .shift-clock.done { color: var(--danger) !important; background: none !important; }
 .shift-late { height: 34px; display: inline-flex; align-items: center; gap: 6px; padding: 0 13px;
   border-radius: 999px; font-size: 12.5px; font-weight: 600; }
+
+/* ===== Second phone (UDP / eyeBeam) — reuse the primary phone's look ===== */
+/* Status dot (distinct class so the primary phone's JS never paints it). */
+.phone2-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #c4c7cc; margin-left: 4px; vertical-align: middle; }
+.phone2-dot.on { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+.ph-reg .phone2-dot { background: #fca5a5; margin: 0; box-shadow: none; }
+.ph-reg .phone2-dot.on { background: #bbf7d0; box-shadow: 0 0 6px #4ade80; }
+/* Bottom tabs (distinct class, same styling as .ph-tab). */
+.ph2-tab { flex: 1; border: none; background: transparent; padding: 9px 0 8px; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--muted); font-size: 10.5px; font-weight: 600; cursor: pointer; }
+.ph2-tab svg { width: 21px; height: 21px; fill: currentColor; stroke: none; }
+.ph2-tab[data-pane="contacts"] svg, .ph2-tab[data-pane="recents"] svg { fill: none; stroke: currentColor; }
+.ph2-tab.active { color: var(--accent); }
+/* Offset the second phone's default position so it doesn't sit exactly on the
+   first one (both are freely draggable and remember their own position). */
+#phone2-panel { right: 356px; }
+#phone2-mini { bottom: 84px; }
+@media (max-width: 760px) { #phone2-panel { right: 24px; } }

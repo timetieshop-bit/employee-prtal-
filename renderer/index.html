@@ -94,6 +94,11 @@
         <span class="pill-tx">Phone</span><span id="phone-dot" class="phone-dot" title="Not registered"></span>
       </button>
 
+      <button id="phone2-btn" class="pillbtn" hidden title="Phone 2">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11 11 0 0 0 3.4.55 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.3a1 1 0 0 1 1 1 11 11 0 0 0 .55 3.4 1 1 0 0 1-.25 1z" fill="currentColor"/></svg>
+        <span class="pill-tx" id="phone2-btn-tx">Phone 2</span><span id="phone2-dot" class="phone2-dot" title="Not ready"></span>
+      </button>
+
       <span id="shift-late" class="shift-late" hidden></span>
       <div class="shift">
         <span class="shift-label" id="shift-label">Shift left</span>
@@ -424,6 +429,117 @@
     <button id="phone-mini-expand" class="phone-mini-btn" title="Open phone">▢</button>
   </div>
 
+  <!-- ===== SECOND PHONE (UDP / eyeBeam trunk) — same layout, native backend ===== -->
+  <aside id="phone2-panel" class="phone-panel phone2-panel" hidden>
+    <div class="ph-head">
+      <div class="ph-head-info">
+        <div class="ph-head-title" id="phone2-title">Phone 2</div>
+        <div class="ph-head-status" id="phone2-status">Connecting…</div>
+      </div>
+      <span class="ph-reg" id="phone2-reg"><span class="phone2-dot" title="Not ready"></span><span id="phone2-reg-tx">…</span></span>
+      <button id="phone2-min-btn" class="ph-ic-sm" title="Minimize">—</button>
+      <button id="phone2-close" class="ph-ic-sm" title="Close">✕</button>
+    </div>
+
+    <div class="ph-body">
+      <!-- KEYPAD -->
+      <div id="ph2-pane-keypad" class="ph-pane">
+        <input id="phone2-number" class="ph-num" type="text" inputmode="tel" placeholder="Enter a number" autocomplete="off" />
+        <div id="phone2-keypad" class="keypad">
+          <button data-k="1">1<small>&nbsp;</small></button><button data-k="2">2<small>ABC</small></button><button data-k="3">3<small>DEF</small></button>
+          <button data-k="4">4<small>GHI</small></button><button data-k="5">5<small>JKL</small></button><button data-k="6">6<small>MNO</small></button>
+          <button data-k="7">7<small>PQRS</small></button><button data-k="8">8<small>TUV</small></button><button data-k="9">9<small>WXYZ</small></button>
+          <button data-k="*">*<small>&nbsp;</small></button><button data-k="0">0<small>+</small></button><button data-k="#">#<small>&nbsp;</small></button>
+        </div>
+        <div class="ph-dial-row">
+          <span class="ph-dial-spacer"></span>
+          <button id="phone2-call" class="ph-call" title="Call"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11 11 0 0 0 3.4.55 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.3a1 1 0 0 1 1 1 11 11 0 0 0 .55 3.4 1 1 0 0 1-.25 1z"/></svg></button>
+          <button id="phone2-back" class="ph-mini-ic" title="Backspace">⌫</button>
+        </div>
+        <button id="phone2-sim" class="ph-sim" title="Switch caller ID">
+          <span class="ph-sim-ic">📤</span><span class="ph-sim-txt">From: <b id="phone2-sim-name">—</b><span id="phone2-sim-num" class="ph-sim-num"></span></span><span class="ph-sim-chev">▾</span>
+        </button>
+        <div id="phone2-sim-menu" class="ph-sim-menu" hidden></div>
+      </div>
+
+      <!-- CONTACTS -->
+      <div id="ph2-pane-contacts" class="ph-pane" hidden>
+        <div class="ph-search"><span class="ph-search-ic">🔍</span><input id="phone2-contact-search" type="text" placeholder="Search contacts" autocomplete="off" /></div>
+        <div id="phone2-contacts-list" class="ph-list"></div>
+        <div id="phone2-contacts-empty" class="ph-empty" hidden>No contacts yet.</div>
+      </div>
+
+      <!-- RECENTS -->
+      <div id="ph2-pane-recents" class="ph-pane" hidden>
+        <div id="phone2-recents-list" class="ph-list"></div>
+        <div id="phone2-recents-empty" class="ph-empty" hidden>No recent calls.</div>
+      </div>
+
+      <!-- IN-CALL -->
+      <div id="phone2-incall" class="ph-incall" hidden>
+        <div class="ph-incall-top">
+          <div class="ph-incall-id">
+            <div id="phone2-incall-ava" class="ph-ava-lg">#</div>
+            <div id="phone2-peer" class="ph-incall-peer">—</div>
+          </div>
+          <div class="ph-incall-right">
+            <div class="ph-incall-state"><span class="call-dot"></span><span id="phone2-state">Calling…</span></div>
+            <div id="phone2-timer" class="ph-incall-timer">00:00</div>
+          </div>
+        </div>
+        <div class="ph-incall-mid">
+          <div class="ph-incall-ctrls">
+            <button id="phone2-mute" class="ph-ctl"><span class="ctl-ic">🎙️</span><span class="ctl-tx">Mute</span></button>
+            <button id="phone2-keypad-toggle" class="ph-ctl active"><span class="ctl-ic">⌨</span><span class="ctl-tx">Dialpad</span></button>
+          </div>
+          <div id="phone2-dtmf-wrap" class="ph-dtmf-wrap">
+            <div class="ph-dtmf-label">Send IVR tones — tap a digit, or type a sequence</div>
+            <div id="phone2-dtmf-pad" class="dtmf-pad">
+              <button data-dt="1">1</button><button data-dt="2">2</button><button data-dt="3">3</button>
+              <button data-dt="4">4</button><button data-dt="5">5</button><button data-dt="6">6</button>
+              <button data-dt="7">7</button><button data-dt="8">8</button><button data-dt="9">9</button>
+              <button data-dt="*">*</button><button data-dt="0">0</button><button data-dt="#">#</button>
+            </div>
+            <div class="ph-dtmf-row">
+              <input id="phone2-dtmf" class="phone-dtmf" type="text" inputmode="tel" placeholder="e.g. 12345#" autocomplete="off" />
+              <button id="phone2-dtmf-send" class="phone-dtmf-send" title="Send in order">Send</button>
+            </div>
+          </div>
+        </div>
+        <div class="ph-incall-end">
+          <button id="phone2-hangup" class="ph-end" title="End call"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11 11 0 0 0 3.4.55 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.3a1 1 0 0 1 1 1 11 11 0 0 0 .55 3.4 1 1 0 0 1-.25 1z"/></svg></button>
+        </div>
+      </div>
+    </div><!-- /.ph-body -->
+
+    <!-- BOTTOM TABS -->
+    <div class="ph-tabs">
+      <button class="ph2-tab active" data-pane="keypad" title="Keypad">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="6" r="1.5"/><circle cx="12" cy="6" r="1.5"/><circle cx="19" cy="6" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/><circle cx="5" cy="18" r="1.5"/><circle cx="12" cy="18" r="1.5"/><circle cx="19" cy="18" r="1.5"/></svg>
+        <span>Keypad</span>
+      </button>
+      <button class="ph2-tab" data-pane="contacts" title="Contacts">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5 20a7 7 0 0 1 14 0" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        <span>Contacts</span>
+      </button>
+      <button class="ph2-tab" data-pane="recents" title="Recents">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span>Recents</span>
+      </button>
+    </div>
+  </aside>
+
+  <div id="phone2-mini" class="phone-mini phone2-mini" hidden>
+    <span class="phone-mini-ic">📞</span>
+    <div class="phone-mini-main">
+      <div id="phone2-mini-peer" class="phone-mini-peer">Phone 2</div>
+      <div id="phone2-mini-timer" class="phone-mini-timer">00:00</div>
+    </div>
+    <button id="phone2-mini-mute" class="phone-mini-btn" title="Mute">🎙️</button>
+    <button id="phone2-mini-hangup" class="phone-mini-btn danger" title="End call">📵</button>
+    <button id="phone2-mini-expand" class="phone-mini-btn" title="Open phone">▢</button>
+  </div>
+
   <audio id="sip-remote" autoplay></audio>
 
   <script src="camera.js"></script>
@@ -434,5 +550,6 @@
   <script src="captions.js"></script>
   <script src="native-audio.js"></script>
   <script src="phone.js"></script>
+  <script src="phone2.js"></script>
 </body>
 </html>
