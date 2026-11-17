@@ -32,7 +32,12 @@
         case 'ringing': setState('Ringing…'); break;
         case 'answered': setState('In call'); startTimer(); break;
         case 'ended': endCall(); break;
-        case 'failed': setStatus('Call failed' + (m.arg ? ': ' + m.arg : '')); endCall(); break;
+        case 'failed':
+          setState('Failed'); setStatus(m.arg ? String(m.arg) : 'Call failed');
+          if (m.arg) { try { alert('Phone 2 call failed:\n\n' + m.arg); } catch (_) {} }
+          endCall();
+          break;
+        case 'status': if (m.arg) setStatus(String(m.arg)); break; // live diagnostics
       }
     });
   }

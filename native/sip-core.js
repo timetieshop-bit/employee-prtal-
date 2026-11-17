@@ -86,7 +86,11 @@ class SipPhone extends EventEmitter {
       // against the trunk's 401/407 challenge (handled in _onInviteResp).
       if (this.cfg.register === false) {
         this.registered = true;
-        this.emit('status', 'ready (outbound-only, no register)');
+        if (this.localPort !== 5060) {
+          this.emit('status', 'ready — but on port ' + this.localPort + ' (5060 is busy; close eyeBeam/other softphone if calls don’t connect)');
+        } else {
+          this.emit('status', 'ready (outbound-only, port 5060)');
+        }
         this.emit('registered');
         return;
       }
@@ -205,8 +209,47 @@ class SipPhone extends EventEmitter {
       };
       this.callId = this.dialog.callId;
       this._sendInvite();
-      this.emit('status', 'calling ' + dest);
+      this.emit('status', 'calling ' + dest + ' via ' + this.cfg.server + ':' + (this.cfg.port || 5060) + ' from ' + this.localIp + ':' + this.localPort);
+      this._armInviteWatch();
     });
+  }
+
+  // No SIP reply to our INVITE means the trunk never heard us (UDP blocked, wrong
+  // server/port) or we can't receive its reply (another softphone like eyeBeam is
+  // holding UDP 5060, which this trunk replies to). Retransmit once, then fail
+  // clearly instead of hanging on "Calling…" forever.
+  _armInviteWatch() {
+    this._clearCallWatch();
+    this._inviteWatch = setTimeout(() => {
+      const d = this.dialog; if (!d || d.state !== 'calling' || d._gotResp) return;
+      if (!d._reinvited) {
+        d._reinvited = true;
+        this.emit('status', 'no reply yet — resending INVITE');
+        this._sendInvite(d._lastAuth);
+        this._inviteWatch = setTimeout(() => {
+          const dd = this.dialog; if (!dd || dd.state !== 'calling' || dd._gotResp) return;
+          this.emit('failed', 'no response from trunk (port ' + this.localPort + '). Close any other softphone (eyeBeam) so this phone can use UDP 5060, and check the trunk IP/port and firewall.');
+          this._clearCallWatch();
+          if (this.rtp) { this.rtp.close(); this.rtp = null; }
+          this.dialog = null;
+        }, 6000);
+      }
+    }, 6000);
+  }
+  // Trunk replied (so it's reachable) but never gave a final answer.
+  _armAnswerWatch() {
+    this._clearCallWatch();
+    this._answerWatch = setTimeout(() => {
+      const d = this.dialog; if (!d || (d.state !== 'calling' && d.state !== 'ringing')) return;
+      this.emit('failed', 'no answer — trunk reachable but the call was not answered or routed');
+      this._clearCallWatch();
+      if (this.rtp) { this.rtp.close(); this.rtp = null; }
+      this.dialog = null;
+    }, 32000);
+  }
+  _clearCallWatch() {
+    if (this._inviteWatch) { clearTimeout(this._inviteWatch); this._inviteWatch = null; }
+    if (this._answerWatch) { clearTimeout(this._answerWatch); this._answerWatch = null; }
   }
   _sendInvite(auth) {
     const d = this.dialog; if (!d) return;
@@ -246,6 +289,7 @@ class SipPhone extends EventEmitter {
   // ---------- hangup ----------
   hangup() {
     const d = this.dialog;
+    this._clearCallWatch();
     if (this.rtp) { this.rtp.close(); this.rtp = null; }
     if (!d) return;
     if (d.state === 'answered') this._sendBye(d);
@@ -352,6 +396,7 @@ class SipPhone extends EventEmitter {
 
   _onInviteResp(msg, cseqH) {
     const d = this.dialog; if (!d) return;
+    d._gotResp = true;                 // trunk is reachable — not a silent-drop case
     // capture To-tag
     const toH = msg.headers['to'] || '';
     const tt = /tag=([^;>\s]+)/.exec(toH); if (tt) d.toTag = tt[1];
@@ -363,15 +408,21 @@ class SipPhone extends EventEmitter {
       const ch = parseAuth(h || '');
       const hdr = msg.status === 407 ? 'Proxy-Authorization' : 'Authorization';
       d.branch = rnd(8); d.cseq = this.cseq.INVITE++;
-      this._sendInvite(this._authHeader('INVITE', d.uri, ch, hdr));
+      const auth = this._authHeader('INVITE', d.uri, ch, hdr);
+      d._lastAuth = auth; d._reinvited = false; d._gotResp = false;
+      this.emit('status', 'authenticating with trunk…');
+      this._sendInvite(auth);
+      this._armInviteWatch();          // wait for the authed INVITE's response
       return;
     }
-    if (msg.status === 100) return;
+    if (msg.status === 100) { this.emit('status', 'trunk reachable (100 Trying)…'); this._armAnswerWatch(); return; }
     if (msg.status === 180 || msg.status === 183) {
       if (d.state === 'calling') { d.state = 'ringing'; this.emit('ringing'); }
+      this._armAnswerWatch();
       return;
     }
     if (msg.status >= 200 && msg.status < 300) {
+      this._clearCallWatch();
       // Parse SDP answer, ACK, start media.
       const remote = parseSdp(msg.body);
       const ct = /<([^>]+)>/.exec(msg.headers['contact'] || '');
@@ -387,6 +438,7 @@ class SipPhone extends EventEmitter {
       return;
     }
     if (msg.status >= 300) {
+      this._clearCallWatch();
       this._ackNonOk(d, msg);
       this.emit('failed', msg.status + ' ' + msg.reason);
       if (this.rtp) { this.rtp.close(); this.rtp = null; }
