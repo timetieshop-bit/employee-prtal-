@@ -53,6 +53,62 @@ function parseAuth(h) {
   return out;
 }
 
+// --- STUN (RFC 5389) public-address discovery ---
+// Softphones like eyeBeam put their *public* (post-NAT) address in SIP Via/Contact
+// and SDP so a trunk that doesn't honor rport still routes replies/media back.
+// Without this, a client behind NAT advertises its private LAN IP and the trunk's
+// responses vanish — exactly the "no response from trunk" symptom.
+const STUN_MAGIC = 0x2112a442;
+function stunRequest() {
+  const buf = Buffer.alloc(20);
+  buf.writeUInt16BE(0x0001, 0);         // Binding Request
+  buf.writeUInt16BE(0x0000, 2);         // length 0
+  buf.writeUInt32BE(STUN_MAGIC, 4);     // magic cookie
+  crypto.randomBytes(12).copy(buf, 8);  // transaction id
+  return buf;
+}
+function isStun(buf) {
+  return buf.length >= 20 && buf.readUInt32BE(4) === STUN_MAGIC && (buf[0] & 0xc0) === 0;
+}
+function parseStunMapped(buf) {
+  let off = 20;
+  while (off + 4 <= buf.length) {
+    const type = buf.readUInt16BE(off);
+    const len = buf.readUInt16BE(off + 2);
+    const v = off + 4;
+    if ((type === 0x0020 || type === 0x0001) && buf[v + 1] === 0x01) { // (XOR-)MAPPED-ADDRESS, IPv4
+      let port = buf.readUInt16BE(v + 2);
+      let ip;
+      if (type === 0x0020) {
+        port ^= (STUN_MAGIC >>> 16);
+        const r = (buf.readUInt32BE(v + 4) ^ STUN_MAGIC) >>> 0;
+        ip = [(r >>> 24) & 0xff, (r >>> 16) & 0xff, (r >>> 8) & 0xff, r & 0xff].join('.');
+      } else {
+        ip = [buf[v + 4], buf[v + 5], buf[v + 6], buf[v + 7]].join('.');
+      }
+      return { ip, port: port & 0xffff };
+    }
+    off = v + len + ((len % 4) ? 4 - (len % 4) : 0);
+  }
+  return null;
+}
+// Discover the public mapping of an already-bound UDP socket. The socket's own
+// message handler must forward STUN replies to sock._stunCb (see handlers below).
+function stunDiscover(sock, host, port, cb) {
+  let done = false;
+  const finish = (res) => { if (done) return; done = true; sock._stunCb = null; cb(res); };
+  try {
+    require('dns').lookup(host, { family: 4 }, (err, addr) => {
+      if (err || !addr) return finish(null);
+      sock._stunCb = (buf) => finish(parseStunMapped(buf));
+      const send = () => { try { sock.send(stunRequest(), port, addr); } catch (_) {} };
+      send();
+      setTimeout(() => { if (!done) send(); }, 350); // one retry
+      setTimeout(() => finish(null), 1200);          // give up → caller uses local IP
+    });
+  } catch (_) { finish(null); }
+}
+
 class SipPhone extends EventEmitter {
   constructor(cfg) {
     super();
@@ -62,6 +118,15 @@ class SipPhone extends EventEmitter {
     this.user = String(cfg.user || '').replace(/[\s()\-.]/g, '');
     this.authUser = (cfg.authUser && String(cfg.authUser).trim()) ? String(cfg.authUser).trim() : this.user;
     this.localIp = primaryIPv4();
+    // Public (post-NAT) address, learned via STUN at startup. Falls back to local.
+    this.pubIp = null; this.pubPort = 0;
+    this.stunEnabled = cfg.stun !== false;
+    // STUN server may arrive as "host" or "host:port"; blank → public default.
+    let sh = (cfg.stunServer && String(cfg.stunServer).trim()) || '';
+    let sp = parseInt(cfg.stunPort, 10) || 0;
+    if (sh.indexOf(':') !== -1) { const parts = sh.split(':'); sh = parts[0]; sp = parseInt(parts[1], 10) || sp; }
+    this.stunHost = sh || 'stun.l.google.com';
+    this.stunPort = sp || 19302;
     this.sock = null;
     this.rtp = null;
     this.registered = false;
@@ -75,28 +140,21 @@ class SipPhone extends EventEmitter {
   }
 
   // ---------- transport ----------
+  // SIP socket message handler: route STUN replies to the pending discovery
+  // callback, everything else to the SIP parser.
+  _attachSip(sock) {
+    sock.on('message', (buf) => {
+      if (sock._stunCb && isStun(buf)) { sock._stunCb(buf); return; }
+      this._onSip(buf.toString('utf8'));
+    });
+  }
   start() {
     this.sock = dgram.createSocket('udp4');
-    this.sock.on('message', (buf, rinfo) => this._onSip(buf.toString('utf8'), rinfo));
+    this._attachSip(this.sock);
     const onBound = () => {
       this.localPort = this.sock.address().port;
       this.emit('status', 'bound udp ' + this.localIp + ':' + this.localPort);
-      // Outbound-only trunks (eyeBeam-style, "Register with domain" unchecked):
-      // never REGISTER. Mark ready right away; each INVITE authenticates itself
-      // against the trunk's 401/407 challenge (handled in _onInviteResp).
-      if (this.cfg.register === false) {
-        this.registered = true;
-        if (this.localPort !== 5060) {
-          this.emit('status', 'ready — but on port ' + this.localPort + ' (5060 is busy; close eyeBeam/other softphone if calls don’t connect)');
-        } else {
-          this.emit('status', 'ready (outbound-only, port 5060)');
-        }
-        this.emit('registered');
-        return;
-      }
-      this._regAuthTries = 0;
-      this._armRegWatchdog();
-      this.register();
+      this._discoverThenReady();
     };
     // Prefer local port 5060 (what softphones like eyeBeam/X-Lite use). Many
     // trunks reply to the port in the Via header rather than honoring rport, so
@@ -105,7 +163,7 @@ class SipPhone extends EventEmitter {
     const bindFallback = () => {
       try { this.sock.removeAllListeners('error'); } catch (_) {}
       this.sock = dgram.createSocket('udp4');
-      this.sock.on('message', (buf, rinfo) => this._onSip(buf.toString('utf8'), rinfo));
+      this._attachSip(this.sock);
       this.sock.on('error', (e) => this.emit('status', 'socket error: ' + e.message));
       this.sock.bind(onBound);
     };
@@ -117,6 +175,36 @@ class SipPhone extends EventEmitter {
         onBound();
       });
     } catch (_) { bindFallback(); }
+  }
+  // Learn our public address via STUN (like eyeBeam's Topology tab), then go
+  // ready / register. STUN failure is non-fatal — we fall back to the local IP.
+  _discoverThenReady() {
+    const go = () => this._ready();
+    if (!this.stunEnabled) return go();
+    this.emit('status', 'discovering public address (STUN ' + this.stunHost + ')…');
+    stunDiscover(this.sock, this.stunHost, this.stunPort, (res) => {
+      if (res && res.ip) {
+        this.pubIp = res.ip; this.pubPort = res.port;
+        this.emit('status', 'public address ' + res.ip + ':' + res.port + ' (NAT) — advertising this to the trunk');
+      } else {
+        this.emit('status', 'STUN gave no answer — using local IP ' + this.localIp + ' (set/check STUN server if calls don’t connect)');
+      }
+      go();
+    });
+  }
+  _ready() {
+    // Outbound-only trunks (eyeBeam-style, "Register with domain" unchecked):
+    // never REGISTER. Mark ready right away; each INVITE authenticates itself
+    // against the trunk's 401/407 challenge (handled in _onInviteResp).
+    if (this.cfg.register === false) {
+      this.registered = true;
+      this.emit('status', 'ready (outbound-only, local port ' + this.localPort + ', advertising ' + this.advIp() + ':' + this.advPort() + ')');
+      this.emit('registered');
+      return;
+    }
+    this._regAuthTries = 0;
+    this._armRegWatchdog();
+    this.register();
   }
   // If the trunk never answers REGISTER (UDP blocked, wrong server/port, or the
   // trunk is silent), don't leave the UI stuck on "Connecting…" forever. One
@@ -150,8 +238,11 @@ class SipPhone extends EventEmitter {
   }
 
   // ---------- helpers ----------
-  _via(branch) { return `SIP/2.0/UDP ${this.localIp}:${this.localPort};branch=z9hG4bK${branch};rport`; }
-  _contact() { return `<sip:${this.user}@${this.localIp}:${this.localPort}>`; }
+  // Advertise the public mapping when STUN found one, else the local address.
+  advIp() { return this.pubIp || this.localIp; }
+  advPort() { return this.pubPort || this.localPort; }
+  _via(branch) { return `SIP/2.0/UDP ${this.advIp()}:${this.advPort()};branch=z9hG4bK${branch};rport`; }
+  _contact() { return `<sip:${this.user}@${this.advIp()}:${this.advPort()}>`; }
   _aor() { return `sip:${this.user}@${this.cfg.domain}`; }
 
   _authHeader(method, uri, challenge, headerName) {
@@ -200,7 +291,8 @@ class SipPhone extends EventEmitter {
     const dest = String(number).replace(/[^\d+*#]/g, '');
     if (!dest) return;
     this.hangup(); // one call at a time
-    this.rtp = new RtpSession(this.localIp, (pcm) => this.emit('audio', pcm));
+    this.rtp = new RtpSession(this.localIp, (pcm) => this.emit('audio', pcm),
+      { enabled: this.stunEnabled, host: this.stunHost, port: this.stunPort });
     this.rtp.open(() => {
       this.dialog = {
         number: dest, callId: rnd(10) + '@' + this.localIp, branch: rnd(8),
@@ -502,36 +594,55 @@ function parseSdp(body) {
 
 // --- RTP session (G.711) ---
 class RtpSession {
-  constructor(localIp, onPcm) {
+  constructor(localIp, onPcm, stunOpts) {
     this.localIp = localIp; this.onPcm = onPcm;
+    this.pubIp = null; this.pubPort = 0;
+    this.stun = stunOpts || { enabled: false };
     this.sock = null; this.localPort = 0;
     this.remoteIp = null; this.remotePort = 0; this.payload = 0; // 0=PCMU 8=PCMA
     this.seq = Math.floor(Math.random() * 65535);
     this.ts = Math.floor(Math.random() * 2 ** 31);
     this.ssrc = Math.floor(Math.random() * 2 ** 31);
     this.txQueue = []; this.txTimer = null; this.muted = false;
+    this._latched = false;
+  }
+  advIp() { return this.pubIp || this.localIp; }
+  advPort() { return this.pubPort || this.localPort; }
+  _attach(sock) {
+    sock.on('message', (buf, rinfo) => {
+      if (sock._stunCb && isStun(buf)) { sock._stunCb(buf); return; }
+      this._recv(buf, rinfo);
+    });
   }
   open(cb) {
+    const finish = () => {
+      this.localPort = this.sock.address().port;
+      if (this.stun && this.stun.enabled) {
+        stunDiscover(this.sock, this.stun.host, this.stun.port, (res) => {
+          if (res && res.ip) { this.pubIp = res.ip; this.pubPort = res.port; }
+          cb && cb();
+        });
+      } else { cb && cb(); }
+    };
     this.sock = dgram.createSocket('udp4');
-    this.sock.on('message', (buf) => this._recv(buf));
+    this._attach(this.sock);
     this.sock.on('error', () => {});
-    // Bind an even port (RTP convention)
     const tryBind = () => {
       const p = 10000 + (Math.floor(Math.random() * 10000) * 2 % 20000); // even-ish
-      this.sock.bind(p, () => { this.localPort = this.sock.address().port; cb && cb(); });
+      this.sock.bind(p, finish);
     };
-    this.sock.once('error', () => { try { this.sock.close(); } catch (_) {} this.sock = dgram.createSocket('udp4'); this.sock.on('message', (buf) => this._recv(buf)); this.sock.bind(() => { this.localPort = this.sock.address().port; cb && cb(); }); });
+    this.sock.once('error', () => { try { this.sock.close(); } catch (_) {} this.sock = dgram.createSocket('udp4'); this._attach(this.sock); this.sock.bind(finish); });
     tryBind();
   }
   offerSdp() {
     const sid = Math.floor(Math.random() * 1e9);
     return [
       'v=0',
-      `o=- ${sid} ${sid} IN IP4 ${this.localIp}`,
+      `o=- ${sid} ${sid} IN IP4 ${this.advIp()}`,
       's=-',
-      `c=IN IP4 ${this.localIp}`,
+      `c=IN IP4 ${this.advIp()}`,
       't=0 0',
-      `m=audio ${this.localPort} RTP/AVP 0 8 101`,
+      `m=audio ${this.advPort()} RTP/AVP 0 8 101`,
       'a=rtpmap:0 PCMU/8000',
       'a=rtpmap:8 PCMA/8000',
       'a=rtpmap:101 telephone-event/8000',
@@ -539,7 +650,7 @@ class RtpSession {
       'a=sendrecv', '',
     ].join('\r\n');
   }
-  setRemote(ip, port, payload) { this.remoteIp = ip; this.remotePort = port; this.payload = payload === 8 ? 8 : 0; }
+  setRemote(ip, port, payload) { this.remoteIp = ip; this.remotePort = port; this.payload = payload === 8 ? 8 : 0; this._latched = false; }
   writePcm(pcm) { // Int16Array, 8kHz mono; chunked into 160-sample frames
     if (!this.remoteIp) return;
     this.txQueue.push(pcm);
@@ -576,8 +687,14 @@ class RtpSession {
     enc.copy(pkt, 12);
     try { this.sock.send(pkt, this.remotePort, this.remoteIp); } catch (_) {}
   }
-  _recv(buf) {
+  _recv(buf, rinfo) {
     if (buf.length < 12) return;
+    // Symmetric RTP (comedia): trunks behind their own NAT/SBC often send media
+    // from an address different from the one in their SDP. Latch onto wherever
+    // the audio actually comes from so return audio reaches them.
+    if (rinfo && rinfo.address && (this.remoteIp !== rinfo.address || this.remotePort !== rinfo.port)) {
+      this.remoteIp = rinfo.address; this.remotePort = rinfo.port; this._latched = true;
+    }
     const pt = buf[1] & 0x7f;
     const payload = buf.subarray(12);
     let pcm;
