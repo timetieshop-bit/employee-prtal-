@@ -294,6 +294,11 @@ html, body {
 
 /* ---------- Exit modal ---------- */
 .modal { position: fixed; inset: 0; background: rgba(32,33,36,.5); display: grid; place-items: center; z-index: 20; }
+/* The exit modal must sit above everything (phone panels z-70, vault z-130,
+   captions z-120) — otherwise an open phone panel overlays it and swallows the
+   clicks, so the password field can't be focused/typed. Full-screen backdrop at
+   this z-index also blocks interaction with anything behind it. */
+#exit-modal { z-index: 400; }
 .exit-card {
   width: 360px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
   padding: 26px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--shadow);

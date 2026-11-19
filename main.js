@@ -1121,7 +1121,7 @@ ipcMain.handle('native:start', (_e, cfg) => {
   try {
     if (nativePhone) { try { nativePhone.stop(); } catch (_) {} nativePhone = null; }
     nativePhone = new SipPhone(cfg);
-    ['registered', 'registerFailed', 'ringing', 'answered', 'ended', 'failed', 'status']
+    ['registered', 'registerFailed', 'ringing', 'answered', 'ended', 'failed', 'status', 'debug']
       .forEach((ev) => nativePhone.on(ev, (arg) => nativeSend('native:event', { ev, arg })));
     // Incoming decoded audio (Int16 @8k) → renderer speaker.
     nativePhone.on('audio', (pcm) => nativeSend('native:audio', Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength)));

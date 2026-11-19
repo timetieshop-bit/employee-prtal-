@@ -143,8 +143,9 @@ class SipPhone extends EventEmitter {
   // SIP socket message handler: route STUN replies to the pending discovery
   // callback, everything else to the SIP parser.
   _attachSip(sock) {
-    sock.on('message', (buf) => {
-      if (sock._stunCb && isStun(buf)) { sock._stunCb(buf); return; }
+    sock.on('message', (buf, rinfo) => {
+      if (sock._stunCb && isStun(buf)) { this.emit('debug', '← STUN reply (' + buf.length + 'B)'); sock._stunCb(buf); return; }
+      this.emit('debug', '← ' + buf.toString('utf8').split('\r\n')[0] + '  (' + buf.length + 'B from ' + (rinfo ? rinfo.address + ':' + rinfo.port : '?') + ')');
       this._onSip(buf.toString('utf8'));
     });
   }
@@ -225,7 +226,10 @@ class SipPhone extends EventEmitter {
   }
   _clearRegWatch() { if (this._regWatch) { clearTimeout(this._regWatch); this._regWatch = null; } }
   _send(msg) {
-    try { this.sock.send(Buffer.from(msg, 'utf8'), this.cfg.port || 5060, this.cfg.server); } catch (_) {}
+    try {
+      this.sock.send(Buffer.from(msg, 'utf8'), this.cfg.port || 5060, this.cfg.server);
+      this.emit('debug', '→ ' + msg.split('\r\n')[0] + '  (' + Buffer.byteLength(msg) + 'B → ' + this.cfg.server + ':' + (this.cfg.port || 5060) + ')');
+    } catch (e) { this.emit('debug', '→ SEND FAILED: ' + (e && e.message)); }
   }
   stop() {
     this.hangup();

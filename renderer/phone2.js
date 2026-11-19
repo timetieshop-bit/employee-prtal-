@@ -20,20 +20,35 @@
   let wantTap = false;
   let nativeStarted = false;
 
+  const PHONE2_BUILD = '0.9.18';
+  const diag = [];
+  function logDiag(line) {
+    const t = new Date().toTimeString().slice(0, 8);
+    diag.push(t + '  ' + line);
+    if (diag.length > 300) diag.shift();
+    const pre = document.getElementById('phone2-diag-log');
+    if (pre && !document.getElementById('phone2-diag').hidden) {
+      pre.textContent = diag.join('\n'); pre.scrollTop = pre.scrollHeight;
+    }
+  }
+
   const available = () => !!cfg;
 
   // ---- Native (UDP) backend events (this phone owns the native backend) ----
   if (window.portal && window.portal.onNativeEvent) {
     window.portal.onNativeEvent((m) => {
       if (!cfg) return;              // only handle while this phone is active
+      if (m.ev === 'status' && m.arg) logDiag('• ' + m.arg);
+      if (m.ev === 'debug' && m.arg) logDiag(String(m.arg));
       switch (m.ev) {
         case 'registered': setReg(true); break;
         case 'registerFailed': setReg(false); setStatus('Connect failed' + (m.arg ? ': ' + m.arg : '')); break;
         case 'ringing': setState('Ringing…'); break;
         case 'answered': setState('In call'); startTimer(); break;
-        case 'ended': endCall(); break;
+        case 'ended': logDiag('• call ended'); endCall(); break;
         case 'failed':
           setState('Failed'); setStatus(m.arg ? String(m.arg) : 'Call failed');
+          logDiag('✗ FAILED: ' + (m.arg || 'call failed'));
           if (m.arg) { try { alert('Phone 2 call failed:\n\n' + m.arg); } catch (_) {} }
           endCall();
           break;
@@ -420,4 +435,40 @@
       e.preventDefault();
     });
   }
+
+  // ---------- diagnostics panel (for troubleshooting the trunk) ----------
+  (function injectDiag() {
+    const headRow = panel.querySelector('.ph-head');
+    if (headRow) {
+      const b = document.createElement('button');
+      b.id = 'phone2-diag-btn'; b.className = 'ph-ic-sm'; b.title = 'Diagnostics'; b.textContent = '🛈';
+      headRow.insertBefore(b, panel.querySelector('#phone2-min-btn'));
+      b.addEventListener('click', () => {
+        const d = document.getElementById('phone2-diag');
+        d.hidden = !d.hidden;
+        if (!d.hidden) { document.getElementById('phone2-diag-log').textContent = diag.join('\n') || '(no activity yet — make a test call)'; }
+      });
+    }
+    const wrap = document.createElement('div');
+    wrap.id = 'phone2-diag'; wrap.hidden = true;
+    wrap.style.cssText = 'position:absolute;inset:0;background:var(--surface);z-index:12;display:flex;flex-direction:column;padding:12px;';
+    wrap.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
+        '<b style="font-size:13px;">Phone 2 diagnostics <span style="color:var(--muted);font-weight:400;">build ' + PHONE2_BUILD + '</span></b>' +
+        '<button id="phone2-diag-close" class="ph-ic-sm" title="Close">✕</button></div>' +
+      '<pre id="phone2-diag-log" style="flex:1;overflow:auto;margin:0;padding:8px;background:var(--bg,#0d1117);color:#cbd5e1;border-radius:8px;font-size:10.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;"></pre>' +
+      '<div style="display:flex;gap:8px;margin-top:8px;">' +
+        '<button id="phone2-diag-copy" class="pillbtn" style="flex:1;">Copy log</button>' +
+        '<button id="phone2-diag-clear" class="pillbtn">Clear</button></div>';
+    panel.querySelector('.ph-body').appendChild(wrap);
+    wrap.querySelector('#phone2-diag-close').addEventListener('click', () => { wrap.hidden = true; });
+    wrap.querySelector('#phone2-diag-clear').addEventListener('click', () => { diag.length = 0; document.getElementById('phone2-diag-log').textContent = ''; });
+    wrap.querySelector('#phone2-diag-copy').addEventListener('click', () => {
+      const text = 'Phone 2 build ' + PHONE2_BUILD + '\ncfg: ' + JSON.stringify(cfg ? { server: cfg.server, port: cfg.port, domain: cfg.domain, user: cfg.user, authUser: cfg.authUser, register: cfg.register, stun: cfg.stun } : null) + '\n\n' + diag.join('\n');
+      try { navigator.clipboard.writeText(text); } catch (_) {}
+      const cb = wrap.querySelector('#phone2-diag-copy'); const old = cb.textContent; cb.textContent = 'Copied ✓'; setTimeout(() => { cb.textContent = old; }, 1200);
+    });
+  })();
+
+  logDiag('Phone 2 build ' + PHONE2_BUILD + ' loaded');
 })();
