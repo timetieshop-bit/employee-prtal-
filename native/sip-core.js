@@ -498,8 +498,18 @@ class SipPhone extends EventEmitter {
       this._regAuthTries = 0; this._regRetries = 0;
       if (this._regExpires === 0) { this.registered = false; return; }
       if (!this.registered) { this.registered = true; this.emit('registered'); }
+      // Honor the lifetime the trunk actually granted (Expires header, or the
+      // Contact's expires= param) and refresh at ~80% of it, so the binding the
+      // trunk needs to accept our calls never lapses between calls.
+      let granted = 300;
+      const eh = (msg.headers['expires'] || '').trim();
+      if (/^\d+$/.test(eh)) granted = parseInt(eh, 10);
+      else { const m = /expires=(\d+)/i.exec(msg.headers['contact'] || ''); if (m) granted = parseInt(m[1], 10); }
+      if (!(granted > 0)) granted = 300;
+      const refreshMs = Math.max(30, Math.floor(granted * 0.8)) * 1000;
       if (this.regTimer) clearInterval(this.regTimer);
-      this.regTimer = setInterval(() => this.register(), 250 * 1000); // refresh < 300s
+      this.regTimer = setInterval(() => this.register(), refreshMs);
+      this.emit('status', 'registered (expires ' + granted + 's, refresh ' + Math.round(refreshMs / 1000) + 's)');
       return;
     }
     if (msg.status >= 400) { this._clearRegWatch(); this.emit('registerFailed', msg.status + ' ' + (msg.reason || '')); }
