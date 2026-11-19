@@ -145,6 +145,7 @@ class SipPhone extends EventEmitter {
     this.regCallId = rnd(8) + '@' + this.localIp;
     this.cseq = { REGISTER: 1, INVITE: 1, BYE: 1, INFO: 1 };
     this.fromTag = rnd(6);
+    this.rinstance = rnd(16); // stable per-session Contact id, like eyeBeam
     this.dialog = null;     // active call dialog state
     this.regTimer = null;
     this.pendingAuth = {};  // last auth challenge per method
@@ -253,11 +254,17 @@ class SipPhone extends EventEmitter {
     if (!this.keepPlus) v = v.replace(/^\+/, '');
     return v;
   }
-  // Advertise the public mapping when STUN found one, else the local address.
+  // Public mapping (STUN) when known, else local. Used ONLY for Contact + media.
   advIp() { return this.pubIp || this.localIp; }
   advPort() { return this.pubPort || this.localPort; }
-  _via(branch) { return `SIP/2.0/UDP ${this.advIp()}:${this.advPort()};branch=z9hG4bK${branch};rport`; }
-  _contact() { return `<sip:${this.user}@${this.advIp()}:${this.advPort()}>`; }
+  // Via carries the LOCAL (private) IP + port, exactly like eyeBeam. A public IP
+  // in the Via that doesn't match the real source looks like spoofing to a
+  // NAT-aware switch (ConnexCS) and gets dropped; a private IP forces it to use
+  // rport and reply to our actual source, which always reaches us.
+  _via(branch) { return `SIP/2.0/UDP ${this.localIp}:${this.localPort};branch=z9hG4bK${branch};rport`; }
+  // Contact advertises the PUBLIC (STUN) address + a stable rinstance, so the
+  // switch knows where to route in-dialog/inbound traffic. eyeBeam does the same.
+  _contact() { return `<sip:${this.user}@${this.advIp()}:${this.advPort()};rinstance=${this.rinstance}>`; }
   _aor() { return `sip:${this.user}@${this.cfg.domain}`; }
 
   _authHeader(method, uri, challenge, headerName) {
@@ -278,21 +285,23 @@ class SipPhone extends EventEmitter {
   }
 
   // ---------- REGISTER ----------
-  register() { this._regAuthTries = 0; this._sendRegister(300); }
+  register() { this._regAuthTries = 0; this._sendRegister(3600); }
   _sendRegister(expires, auth) {
     const branch = rnd(8);
     const uri = `sip:${this.cfg.domain}`;
     const cseq = this.cseq.REGISTER++;
+    const dn = this.cfg.displayName || this.user;
     let lines = [
       `REGISTER ${uri} SIP/2.0`,
       this._via(branch),
       `Max-Forwards: 70`,
-      `From: <${this._aor()}>;tag=${this.fromTag}`,
-      `To: <${this._aor()}>`,
+      `Contact: ${this._contact()}`,
+      `To: "${dn}" <${this._aor()}>`,
+      `From: "${dn}" <${this._aor()}>;tag=${this.fromTag}`,
       `Call-ID: ${this.regCallId}`,
       `CSeq: ${cseq} REGISTER`,
-      `Contact: ${this._contact()}`,
       `Expires: ${expires}`,
+      `Allow: INVITE, ACK, CANCEL, OPTIONS, BYE, REFER, NOTIFY, MESSAGE, SUBSCRIBE, INFO`,
       `User-Agent: ${this.ua}`,
     ];
     if (auth) lines.push(auth);
@@ -368,7 +377,7 @@ class SipPhone extends EventEmitter {
       this._via(d.branch),
       `Max-Forwards: 70`,
       `From: "${this.cfg.displayName || fromUser}" <sip:${fromUser}@${this.cfg.domain}>;tag=${this.fromTag}`,
-      `To: <${d.uri}>`,
+      `To: "${d.number}" <${d.uri}>`,
       `Call-ID: ${d.callId}`,
       `CSeq: ${d.cseq} INVITE`,
       `Contact: ${this._contact()}`,
@@ -665,13 +674,17 @@ class RtpSession {
   }
   offerSdp() {
     const sid = Math.floor(Math.random() * 1e9);
+    // Use the LOCAL (private) IP + RTP port in the SDP, like eyeBeam. The switch's
+    // media server latches onto wherever our RTP actually arrives from (comedia),
+    // and our _recv() latches onto its source too — so audio flows through NAT
+    // without advertising a possibly-wrong STUN port here.
     return [
       'v=0',
-      `o=- ${sid} ${sid} IN IP4 ${this.advIp()}`,
+      `o=- ${sid} ${sid} IN IP4 ${this.localIp}`,
       's=-',
-      `c=IN IP4 ${this.advIp()}`,
+      `c=IN IP4 ${this.localIp}`,
       't=0 0',
-      `m=audio ${this.advPort()} RTP/AVP 0 8 101`,
+      `m=audio ${this.localPort} RTP/AVP 0 8 101`,
       'a=rtpmap:0 PCMU/8000',
       'a=rtpmap:8 PCMA/8000',
       'a=rtpmap:101 telephone-event/8000',
