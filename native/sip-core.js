@@ -118,13 +118,14 @@ class SipPhone extends EventEmitter {
     // formatting AND the "+" by default. Set keepPlus:true only for a trunk that
     // genuinely wants E.164 with "+".
     this.keepPlus = !!cfg.keepPlus;
-    // Some trunks drop INVITEs from unknown softphone User-Agents (anti-scanner).
-    // Default to an eyeBeam-style UA so a trunk that whitelists eyeBeam accepts us.
-    this.ua = (cfg.userAgent && String(cfg.userAgent).trim()) || 'eyeBeam release 1105v stamp 61096';
-    // Account identity (From/Contact user) is kept EXACTLY as provisioned in the
-    // trunk — including a leading "+", which eyeBeam's "User name" has. Only the
-    // DIALED number strips the "+" (the dial plan wants bare digits). Sending the
-    // wrong identity makes the trunk not recognize the account and drop silently.
+    // Match eyeBeam's exact User-Agent (captured from its log) — some trunks only
+    // accept known softphone UAs.
+    this.ua = (cfg.userAgent && String(cfg.userAgent).trim()) || 'eyeBeam release 1003l stamp 30936';
+    // Account identity (From/Contact user) must match EXACTLY how the trunk
+    // provisioned it. eyeBeam sends the full "User name" verbatim with only spaces
+    // percent-encoded, e.g. "+1 (231) 999-9091" -> "+1%20(231)%20999-9091" (parens,
+    // "+" and "-" left literal). Stripping it to bare digits made the trunk not
+    // recognize the account and silently drop our INVITE.
     this.user = this._id(cfg.user);
     this.authUser = (cfg.authUser && String(cfg.authUser).trim()) ? String(cfg.authUser).trim() : this.user;
     this.localIp = primaryIPv4();
@@ -162,30 +163,17 @@ class SipPhone extends EventEmitter {
   start() {
     this.sock = dgram.createSocket('udp4');
     this._attachSip(this.sock);
+    this.sock.on('error', (e) => this.emit('status', 'socket error: ' + e.message));
     const onBound = () => {
       this.localPort = this.sock.address().port;
       this.emit('status', 'bound udp ' + this.localIp + ':' + this.localPort);
       this._discoverThenReady();
     };
-    // Prefer local port 5060 (what softphones like eyeBeam/X-Lite use). Many
-    // trunks reply to the port in the Via header rather than honoring rport, so
-    // a random ephemeral port can get no response at all. If 5060 is already in
-    // use, fall back to an OS-assigned port.
-    const bindFallback = () => {
-      try { this.sock.removeAllListeners('error'); } catch (_) {}
-      this.sock = dgram.createSocket('udp4');
-      this._attachSip(this.sock);
-      this.sock.on('error', (e) => this.emit('status', 'socket error: ' + e.message));
-      this.sock.bind(onBound);
-    };
-    this.sock.once('error', bindFallback);
-    try {
-      this.sock.bind(5060, () => {
-        this.sock.removeListener('error', bindFallback);
-        this.sock.on('error', (e) => this.emit('status', 'socket error: ' + e.message));
-        onBound();
-      });
-    } catch (_) { bindFallback(); }
+    // Bind an OS-assigned (ephemeral) port, exactly like eyeBeam — it uses a
+    // random high port (e.g. 28156), NOT 5060. Many trunks/SBCs silently DROP
+    // SIP arriving from source port 5060 as anti-scanner protection, and the
+    // trunk honors rport so it replies to wherever we actually send from.
+    try { this.sock.bind(); } catch (_) { try { this.sock.bind(); } catch (__) {} }
   }
   // Learn our public address via STUN (like eyeBeam's Topology tab), then go
   // ready / register. STUN failure is non-fatal — we fall back to the local IP.
@@ -252,10 +240,10 @@ class SipPhone extends EventEmitter {
   }
 
   // ---------- helpers ----------
-  // Account identity (From/Contact/AOR user): strip only formatting (spaces,
-  // parens, dashes, dots) but KEEP a leading "+", so it matches how the trunk
-  // provisioned the number (eyeBeam "User name" = "+1 (231) 999-9091").
-  _id(s) { return String(s || '').replace(/[\s()\-.]/g, ''); }
+  // Account identity (From/Contact/AOR user) for SIP URIs: send the provisioned
+  // username verbatim with ONLY spaces percent-encoded (%20), exactly like
+  // eyeBeam. Keep "+", "(", ")", "-" literal. Do NOT strip to bare digits.
+  _id(s) { return String(s || '').trim().replace(/ /g, '%20'); }
   // Dialed number (Request-URI/To user): drop formatting AND the leading "+"
   // (unless keepPlus) — trunk dial plans want bare digits like 18002908206.
   _num(s) {
@@ -382,8 +370,9 @@ class SipPhone extends EventEmitter {
       `Call-ID: ${d.callId}`,
       `CSeq: ${d.cseq} INVITE`,
       `Contact: ${this._contact()}`,
-      `User-Agent: ${this.ua}`,
+      `Allow: INVITE, ACK, CANCEL, OPTIONS, BYE, REFER, NOTIFY, MESSAGE, SUBSCRIBE, INFO`,
       `Content-Type: application/sdp`,
+      `User-Agent: ${this.ua}`,
     ];
     if (auth) lines.push(auth);
     lines.push(`Content-Length: ${Buffer.byteLength(sdp)}`, '', sdp);
