@@ -307,6 +307,8 @@ class SipPhone extends EventEmitter {
     if (auth) lines.push(auth);
     lines.push('Content-Length: 0', '', '');
     this._regBranch = branch; this._regExpires = expires;
+    const hdrEnd = lines.indexOf('');
+    this.emit('debug', '--- full REGISTER ---\n' + lines.slice(0, hdrEnd >= 0 ? hdrEnd : lines.length).join('\n') + '\n--- end ---');
     this._send(lines.join('\r\n'));
   }
 
