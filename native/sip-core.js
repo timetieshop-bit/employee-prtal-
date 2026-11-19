@@ -113,9 +113,12 @@ class SipPhone extends EventEmitter {
   constructor(cfg) {
     super();
     this.cfg = cfg; // {server, port, user, authUser, password, domain, displayName, callerId}
-    // SIP URIs can't contain spaces/parentheses, so normalize a formatted number
-    // like "+1 (231) 999-9091" into "+12319999091" for the From/To/Contact user.
-    this.user = String(cfg.user || '').replace(/[\s()\-.]/g, '');
+    // Most trunks (and eyeBeam here) dial bare digits like 18002908206 — a leading
+    // "+" makes the trunk's dial-plan miss and silently drop the INVITE. So strip
+    // formatting AND the "+" by default. Set keepPlus:true only for a trunk that
+    // genuinely wants E.164 with "+".
+    this.keepPlus = !!cfg.keepPlus;
+    this.user = this._num(cfg.user);
     this.authUser = (cfg.authUser && String(cfg.authUser).trim()) ? String(cfg.authUser).trim() : this.user;
     this.localIp = primaryIPv4();
     // Public (post-NAT) address, learned via STUN at startup. Falls back to local.
@@ -242,6 +245,13 @@ class SipPhone extends EventEmitter {
   }
 
   // ---------- helpers ----------
+  // Normalize a number for SIP: drop spaces/punctuation, and the leading "+"
+  // unless keepPlus is set. Keeps digits, * and # (for feature codes).
+  _num(s) {
+    let v = String(s || '').replace(/[^\d+*#]/g, '');
+    if (!this.keepPlus) v = v.replace(/^\+/, '');
+    return v;
+  }
   // Advertise the public mapping when STUN found one, else the local address.
   advIp() { return this.pubIp || this.localIp; }
   advPort() { return this.pubPort || this.localPort; }
@@ -292,7 +302,7 @@ class SipPhone extends EventEmitter {
 
   // ---------- INVITE (outbound call) ----------
   call(number) {
-    const dest = String(number).replace(/[^\d+*#]/g, '');
+    const dest = this._num(number);
     if (!dest) return;
     this.hangup(); // one call at a time
     this.rtp = new RtpSession(this.localIp, (pcm) => this.emit('audio', pcm),
@@ -349,7 +359,7 @@ class SipPhone extends EventEmitter {
   }
   _sendInvite(auth) {
     const d = this.dialog; if (!d) return;
-    const fromUser = this.cfg.callerId ? this.cfg.callerId.replace(/[^\d+]/g, '') : this.user;
+    const fromUser = this.cfg.callerId ? this._num(this.cfg.callerId) : this.user;
     const sdp = this.rtp.offerSdp();
     let lines = [
       `INVITE ${d.uri} SIP/2.0`,

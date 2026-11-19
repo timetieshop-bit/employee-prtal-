@@ -1168,6 +1168,22 @@ document.addEventListener('paste', (e) => {
   document.addEventListener(ev, (e) => { if (window.portal.clipLock()) e.preventDefault(); }, true));
 
 // ======================= EXIT PASSWORD GATE =======================
+// Small live wall clock in the header (12-hour with AM/PM).
+(function startWallClock() {
+  const el = document.getElementById('wall-clock');
+  if (!el) return;
+  const tick = () => {
+    const d = new Date();
+    let h = d.getHours(); const ap = h < 12 ? 'AM' : 'PM';
+    h = h % 12; if (h === 0) h = 12;
+    const m = String(d.getMinutes()).padStart(2, '0');
+    const s = String(d.getSeconds()).padStart(2, '0');
+    el.textContent = h + ':' + m + ':' + s + ' ' + ap;
+  };
+  tick();
+  setInterval(tick, 1000);
+})();
+
 const exitModal = document.getElementById('exit-modal');
 const exitForm = document.getElementById('exit-form');
 const exitError = document.getElementById('exit-error');

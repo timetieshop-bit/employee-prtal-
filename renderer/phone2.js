@@ -20,14 +20,15 @@
   let wantTap = false;
   let nativeStarted = false;
 
-  const PHONE2_BUILD = '0.9.18';
+  const PHONE2_BUILD = '0.9.20';
   const diag = [];
   function logDiag(line) {
     const t = new Date().toTimeString().slice(0, 8);
     diag.push(t + '  ' + line);
     if (diag.length > 300) diag.shift();
     const pre = document.getElementById('phone2-diag-log');
-    if (pre && !document.getElementById('phone2-diag').hidden) {
+    const dd = document.getElementById('phone2-diag');
+    if (pre && dd && dd.style.display !== 'none') {
       pre.textContent = diag.join('\n'); pre.scrollTop = pre.scrollHeight;
     }
   }
@@ -445,13 +446,14 @@
       headRow.insertBefore(b, panel.querySelector('#phone2-min-btn'));
       b.addEventListener('click', () => {
         const d = document.getElementById('phone2-diag');
-        d.hidden = !d.hidden;
-        if (!d.hidden) { document.getElementById('phone2-diag-log').textContent = diag.join('\n') || '(no activity yet — make a test call)'; }
+        const show = d.style.display === 'none';
+        d.style.display = show ? 'flex' : 'none';
+        if (show) { document.getElementById('phone2-diag-log').textContent = diag.join('\n') || '(no activity yet — make a test call)'; }
       });
     }
     const wrap = document.createElement('div');
-    wrap.id = 'phone2-diag'; wrap.hidden = true;
-    wrap.style.cssText = 'position:absolute;inset:0;background:var(--surface);z-index:12;display:flex;flex-direction:column;padding:12px;';
+    wrap.id = 'phone2-diag';
+    wrap.style.cssText = 'position:absolute;inset:0;background:var(--surface);z-index:12;display:none;flex-direction:column;padding:12px;';
     wrap.innerHTML =
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
         '<b style="font-size:13px;">Phone 2 diagnostics <span style="color:var(--muted);font-weight:400;">build ' + PHONE2_BUILD + '</span></b>' +
@@ -461,7 +463,7 @@
         '<button id="phone2-diag-copy" class="pillbtn" style="flex:1;">Copy log</button>' +
         '<button id="phone2-diag-clear" class="pillbtn">Clear</button></div>';
     panel.querySelector('.ph-body').appendChild(wrap);
-    wrap.querySelector('#phone2-diag-close').addEventListener('click', () => { wrap.hidden = true; });
+    wrap.querySelector('#phone2-diag-close').addEventListener('click', () => { wrap.style.display = 'none'; });
     wrap.querySelector('#phone2-diag-clear').addEventListener('click', () => { diag.length = 0; document.getElementById('phone2-diag-log').textContent = ''; });
     wrap.querySelector('#phone2-diag-copy').addEventListener('click', () => {
       const text = 'Phone 2 build ' + PHONE2_BUILD + '\ncfg: ' + JSON.stringify(cfg ? { server: cfg.server, port: cfg.port, domain: cfg.domain, user: cfg.user, authUser: cfg.authUser, register: cfg.register, stun: cfg.stun } : null) + '\n\n' + diag.join('\n');

@@ -537,6 +537,12 @@ function scheduleForeground() {
   const grace = Math.max(2000, Number(currentFeatures.foregroundGraceMs) || 5000);
   foregroundTimer = setTimeout(() => {
     if (!mainWindow || mainWindow.isDestroyed() || !currentToken) return;
+    // If any window of OUR app currently has focus, the user is still inside the
+    // portal — just in a child popup (an OAuth/payment window, a dialer widget,
+    // etc.). Stealing focus here would yank the caret mid-typing and drop keys
+    // across the whole app. Only force-foreground when the app is truly in the
+    // background (no app window focused).
+    try { if (BrowserWindow.getFocusedWindow()) return; } catch (_) {}
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();

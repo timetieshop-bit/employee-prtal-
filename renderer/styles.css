@@ -1285,3 +1285,8 @@ html, body {
 #phone2-panel { right: 356px; }
 #phone2-mini { bottom: 84px; }
 @media (max-width: 760px) { #phone2-panel { right: 24px; } }
+
+/* Header wall clock — compact live time pill, matches the shift pill look. */
+.wall-clock { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 13px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); box-sizing: border-box; }
+.wall-clock-ic { width: 15px; height: 15px; color: var(--muted); flex: none; }
+.wall-clock-tx { font-size: 13px; font-weight: 700; color: var(--text, #202124); font-variant-numeric: tabular-nums; letter-spacing: .3px; white-space: nowrap; }
