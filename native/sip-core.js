@@ -164,16 +164,18 @@ class SipPhone extends EventEmitter {
     this.sock = dgram.createSocket('udp4');
     this._attachSip(this.sock);
     this.sock.on('error', (e) => this.emit('status', 'socket error: ' + e.message));
-    const onBound = () => {
+    // Fire once the socket is actually bound. Use the 'listening' event (not a
+    // bind callback) so this is reliable for an OS-assigned port.
+    this.sock.once('listening', () => {
       this.localPort = this.sock.address().port;
       this.emit('status', 'bound udp ' + this.localIp + ':' + this.localPort);
       this._discoverThenReady();
-    };
+    });
     // Bind an OS-assigned (ephemeral) port, exactly like eyeBeam — it uses a
     // random high port (e.g. 28156), NOT 5060. Many trunks/SBCs silently DROP
     // SIP arriving from source port 5060 as anti-scanner protection, and the
     // trunk honors rport so it replies to wherever we actually send from.
-    try { this.sock.bind(); } catch (_) { try { this.sock.bind(); } catch (__) {} }
+    try { this.sock.bind(); } catch (e) { this.emit('status', 'bind failed: ' + (e && e.message)); }
   }
   // Learn our public address via STUN (like eyeBeam's Topology tab), then go
   // ready / register. STUN failure is non-fatal — we fall back to the local IP.
