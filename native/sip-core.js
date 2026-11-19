@@ -118,7 +118,14 @@ class SipPhone extends EventEmitter {
     // formatting AND the "+" by default. Set keepPlus:true only for a trunk that
     // genuinely wants E.164 with "+".
     this.keepPlus = !!cfg.keepPlus;
-    this.user = this._num(cfg.user);
+    // Some trunks drop INVITEs from unknown softphone User-Agents (anti-scanner).
+    // Default to an eyeBeam-style UA so a trunk that whitelists eyeBeam accepts us.
+    this.ua = (cfg.userAgent && String(cfg.userAgent).trim()) || 'eyeBeam release 1105v stamp 61096';
+    // Account identity (From/Contact user) is kept EXACTLY as provisioned in the
+    // trunk — including a leading "+", which eyeBeam's "User name" has. Only the
+    // DIALED number strips the "+" (the dial plan wants bare digits). Sending the
+    // wrong identity makes the trunk not recognize the account and drop silently.
+    this.user = this._id(cfg.user);
     this.authUser = (cfg.authUser && String(cfg.authUser).trim()) ? String(cfg.authUser).trim() : this.user;
     this.localIp = primaryIPv4();
     // Public (post-NAT) address, learned via STUN at startup. Falls back to local.
@@ -245,8 +252,12 @@ class SipPhone extends EventEmitter {
   }
 
   // ---------- helpers ----------
-  // Normalize a number for SIP: drop spaces/punctuation, and the leading "+"
-  // unless keepPlus is set. Keeps digits, * and # (for feature codes).
+  // Account identity (From/Contact/AOR user): strip only formatting (spaces,
+  // parens, dashes, dots) but KEEP a leading "+", so it matches how the trunk
+  // provisioned the number (eyeBeam "User name" = "+1 (231) 999-9091").
+  _id(s) { return String(s || '').replace(/[\s()\-.]/g, ''); }
+  // Dialed number (Request-URI/To user): drop formatting AND the leading "+"
+  // (unless keepPlus) — trunk dial plans want bare digits like 18002908206.
   _num(s) {
     let v = String(s || '').replace(/[^\d+*#]/g, '');
     if (!this.keepPlus) v = v.replace(/^\+/, '');
@@ -292,7 +303,7 @@ class SipPhone extends EventEmitter {
       `CSeq: ${cseq} REGISTER`,
       `Contact: ${this._contact()}`,
       `Expires: ${expires}`,
-      `User-Agent: EmployeePortalPhone`,
+      `User-Agent: ${this.ua}`,
     ];
     if (auth) lines.push(auth);
     lines.push('Content-Length: 0', '', '');
@@ -359,7 +370,8 @@ class SipPhone extends EventEmitter {
   }
   _sendInvite(auth) {
     const d = this.dialog; if (!d) return;
-    const fromUser = this.cfg.callerId ? this._num(this.cfg.callerId) : this.user;
+    // From identity keeps the "+" (account identity), unlike the dialed number.
+    const fromUser = this.cfg.callerId ? this._id(this.cfg.callerId) : this.user;
     const sdp = this.rtp.offerSdp();
     let lines = [
       `INVITE ${d.uri} SIP/2.0`,
@@ -370,12 +382,14 @@ class SipPhone extends EventEmitter {
       `Call-ID: ${d.callId}`,
       `CSeq: ${d.cseq} INVITE`,
       `Contact: ${this._contact()}`,
-      `User-Agent: EmployeePortalPhone`,
+      `User-Agent: ${this.ua}`,
       `Content-Type: application/sdp`,
     ];
     if (auth) lines.push(auth);
     lines.push(`Content-Length: ${Buffer.byteLength(sdp)}`, '', sdp);
-    this._send(lines.join('\r\n'));
+    const msg = lines.join('\r\n');
+    this.emit('debug', '--- full INVITE ---\n' + lines.slice(0, lines.indexOf('') >= 0 ? lines.indexOf('') : lines.length).join('\n') + '\n--- (SDP omitted) ---');
+    this._send(msg);
   }
   _sendAck(d, toTagLine, uri) {
     // ACK for a 2xx uses a new branch; for non-2xx reuse INVITE branch.

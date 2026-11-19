@@ -20,7 +20,7 @@
   let wantTap = false;
   let nativeStarted = false;
 
-  const PHONE2_BUILD = '0.9.20';
+  const PHONE2_BUILD = '0.9.22';
   const diag = [];
   function logDiag(line) {
     const t = new Date().toTimeString().slice(0, 8);
@@ -48,9 +48,11 @@
         case 'answered': setState('In call'); startTimer(); break;
         case 'ended': logDiag('• call ended'); endCall(); break;
         case 'failed':
+          // NOTE: never use alert()/confirm() here — a blocking dialog in Electron
+          // breaks keyboard focus app-wide after dismissal. Show it inline instead.
           setState('Failed'); setStatus(m.arg ? String(m.arg) : 'Call failed');
+          showFailBanner(m.arg || 'Call failed');
           logDiag('✗ FAILED: ' + (m.arg || 'call failed'));
-          if (m.arg) { try { alert('Phone 2 call failed:\n\n' + m.arg); } catch (_) {} }
           endCall();
           break;
         case 'status': if (m.arg) setStatus(String(m.arg)); break; // live diagnostics
@@ -227,6 +229,22 @@
     if (v) setStatus('Ready');
   }
   function setStatus(t) { const s = $('phone2-status'); if (s) s.textContent = t; }
+  // Non-blocking failure banner (NEVER alert() — see note in the event handler).
+  let failTimer = null;
+  function showFailBanner(msg) {
+    let el = document.getElementById('phone2-fail');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'phone2-fail';
+      el.style.cssText = 'margin:8px 12px 0;padding:9px 11px;background:#fdecea;color:#b3261e;border:1px solid #f5c6cb;border-radius:9px;font-size:11.5px;line-height:1.45;position:relative;';
+      const body = panel.querySelector('.ph-body');
+      if (body) body.insertBefore(el, body.firstChild);
+    }
+    el.textContent = msg;
+    el.style.display = 'block';
+    if (failTimer) clearTimeout(failTimer);
+    failTimer = setTimeout(() => { if (el) el.style.display = 'none'; }, 12000);
+  }
   function setState(t) { const s = $('phone2-state'); if (s) s.textContent = t; }
 
   function switchPane(which) {
