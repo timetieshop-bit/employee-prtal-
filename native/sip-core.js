@@ -262,6 +262,18 @@ class SipPhone extends EventEmitter {
   // NAT-aware switch (ConnexCS) and gets dropped; a private IP forces it to use
   // rport and reply to our actual source, which always reaches us.
   _via(branch) { return `Via: SIP/2.0/UDP ${this.localIp}:${this.localPort};branch=z9hG4bK${branch};rport`; }
+  // Build the dialog route set from a response's Record-Route headers. A UAC
+  // takes them in REVERSE order (RFC 3261 §12.1.2). In-dialog ACK/BYE/INFO must
+  // echo these as Route: headers or an SBC like ConnexCS can't match the dialog
+  // (symptoms: retransmitted 200 OK, "500 Unable To Match Dialog" on BYE).
+  _captureRoutes(d, msg) {
+    if (!d || d._routesSet) return;
+    const h = msg.headers['record-route'];
+    if (!h) return;
+    const m = h.match(/<[^>]+>/g);
+    if (m && m.length) { d.routeSet = m.slice().reverse(); d._routesSet = true; }
+  }
+  _routeLines(d) { return (d && d.routeSet) ? d.routeSet.map((r) => `Route: ${r}`) : []; }
   // Contact advertises the PUBLIC (STUN) address + a stable rinstance, so the
   // switch knows where to route in-dialog/inbound traffic. eyeBeam does the same.
   _contact() { return `<sip:${this.user}@${this.advIp()}:${this.advPort()};rinstance=${this.rinstance}>`; }
@@ -399,6 +411,7 @@ class SipPhone extends EventEmitter {
       `ACK ${uri} SIP/2.0`,
       this._via(d.ackBranch || d.branch),
       `Max-Forwards: 70`,
+      ...this._routeLines(d),
       `From: <sip:${this.user}@${this.cfg.domain}>;tag=${this.fromTag}`,
       toTagLine,
       `Call-ID: ${d.callId}`,
@@ -424,6 +437,7 @@ class SipPhone extends EventEmitter {
       `BYE ${d.remoteTarget || d.uri} SIP/2.0`,
       this._via(rnd(8)),
       `Max-Forwards: 70`,
+      ...this._routeLines(d),
       `From: <sip:${this.user}@${this.cfg.domain}>;tag=${this.fromTag}`,
       `To: <${d.uri}>` + (d.toTag ? `;tag=${d.toTag}` : ''),
       `Call-ID: ${d.callId}`,
@@ -458,6 +472,7 @@ class SipPhone extends EventEmitter {
         `INFO ${d.remoteTarget || d.uri} SIP/2.0`,
         this._via(rnd(8)),
         `Max-Forwards: 70`,
+        ...this._routeLines(d),
         `From: <sip:${this.user}@${this.cfg.domain}>;tag=${this.fromTag}`,
         `To: <${d.uri}>` + (d.toTag ? `;tag=${d.toTag}` : ''),
         `Call-ID: ${d.callId}`,
@@ -529,9 +544,10 @@ class SipPhone extends EventEmitter {
   _onInviteResp(msg, cseqH) {
     const d = this.dialog; if (!d) return;
     d._gotResp = true;                 // trunk is reachable — not a silent-drop case
-    // capture To-tag
+    // capture To-tag + the dialog route set (from the first response carrying it)
     const toH = msg.headers['to'] || '';
     const tt = /tag=([^;>\s]+)/.exec(toH); if (tt) d.toTag = tt[1];
+    this._captureRoutes(d, msg);
 
     if (msg.status === 401 || msg.status === 407) {
       // ACK the challenge, then re-INVITE with auth.
