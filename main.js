@@ -1135,7 +1135,7 @@ ipcMain.handle('native:start', (_e, cfg) => {
     return { ok: true };
   } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
 });
-ipcMain.handle('native:call', (_e, num) => { if (nativePhone) nativePhone.call(num); return { ok: true }; });
+ipcMain.handle('native:call', (_e, num, callerId) => { if (nativePhone) nativePhone.call(num, callerId); return { ok: true }; });
 ipcMain.handle('native:hangup', () => { if (nativePhone) nativePhone.hangup(); return { ok: true }; });
 ipcMain.handle('native:dtmf', (_e, d) => { if (nativePhone) nativePhone.sendDtmf(d); return { ok: true }; });
 ipcMain.handle('native:mute', (_e, on) => { if (nativePhone) nativePhone.mute(on); return { ok: true }; });

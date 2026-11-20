@@ -61,7 +61,7 @@ contextBridge.exposeInMainWorld('portal', {
 
   // Native (UDP) softphone — direct-to-trunk, no WSS. Audio bridged over IPC.
   nativeStart: (cfg) => ipcRenderer.invoke('native:start', cfg),
-  nativeCall: (num) => ipcRenderer.invoke('native:call', num),
+  nativeCall: (num, callerId) => ipcRenderer.invoke('native:call', num, callerId),
   nativeHangup: () => ipcRenderer.invoke('native:hangup'),
   nativeDtmf: (d) => ipcRenderer.invoke('native:dtmf', d),
   nativeMute: (on) => ipcRenderer.invoke('native:mute', on),

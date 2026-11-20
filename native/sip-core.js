@@ -157,8 +157,14 @@ class SipPhone extends EventEmitter {
   _attachSip(sock) {
     sock.on('message', (buf, rinfo) => {
       if (sock._stunCb && isStun(buf)) { this.emit('debug', '← STUN reply (' + buf.length + 'B)'); sock._stunCb(buf); return; }
-      this.emit('debug', '← ' + buf.toString('utf8').split('\r\n')[0] + '  (' + buf.length + 'B from ' + (rinfo ? rinfo.address + ':' + rinfo.port : '?') + ')');
-      this._onSip(buf.toString('utf8'));
+      const s = buf.toString('utf8');
+      this.emit('debug', '← ' + s.split('\r\n')[0] + '  (' + buf.length + 'B from ' + (rinfo ? rinfo.address + ':' + rinfo.port : '?') + ')');
+      // Dump the headers of an INVITE 18x/2xx that carries Record-Route/Contact,
+      // so the dialog's real routing is visible for in-dialog (ACK/BYE) debugging.
+      if (/record-route/i.test(s) && /\bCSeq:\s*\d+\s+INVITE/i.test(s)) {
+        this.emit('debug', '--- received dialog response ---\n' + s.split('\r\n\r\n')[0] + '\n--- end ---');
+      }
+      this._onSip(s);
     });
   }
   start() {
@@ -325,10 +331,16 @@ class SipPhone extends EventEmitter {
   }
 
   // ---------- INVITE (outbound call) ----------
-  call(number) {
+  call(number, callerId) {
     const dest = this._num(number);
     if (!dest) return;
     this.hangup(); // one call at a time
+    // Caller ID for THIS call: the UI-picked number if given, else the trunk
+    // default. Kept on the dialog so the From is identical across INVITE/ACK/BYE
+    // (a mismatched From breaks the dialog). Auth still uses authUser (aitech).
+    const cid = (callerId && String(callerId).trim()) || this.cfg.callerId || '';
+    const fromUser = cid ? this._id(cid) : this.user;
+    const fromName = cid || this.cfg.displayName || this.user;
     this.rtp = new RtpSession(this.localIp, (pcm) => this.emit('audio', pcm),
       { enabled: this.stunEnabled, host: this.stunHost, port: this.stunPort });
     this.rtp.open(() => {
@@ -336,6 +348,7 @@ class SipPhone extends EventEmitter {
         number: dest, callId: rnd(10) + '@' + this.localIp, branch: rnd(8),
         cseq: this.cseq.INVITE++, toTag: null, state: 'calling',
         uri: `sip:${dest}@${this.cfg.domain}`,
+        fromUser, fromName,
       };
       this.callId = this.dialog.callId;
       this._sendInvite();
@@ -383,14 +396,15 @@ class SipPhone extends EventEmitter {
   }
   _sendInvite(auth) {
     const d = this.dialog; if (!d) return;
-    // From identity keeps the "+" (account identity), unlike the dialed number.
-    const fromUser = this.cfg.callerId ? this._id(this.cfg.callerId) : this.user;
+    // Per-call From identity (UI-picked caller ID or trunk default), kept on the dialog.
+    const fromUser = d.fromUser || (this.cfg.callerId ? this._id(this.cfg.callerId) : this.user);
+    const fromName = d.fromName || this.cfg.displayName || fromUser;
     const sdp = this.rtp.offerSdp();
     let lines = [
       `INVITE ${d.uri} SIP/2.0`,
       this._via(d.branch),
       `Max-Forwards: 70`,
-      `From: "${this.cfg.displayName || fromUser}" <sip:${fromUser}@${this.cfg.domain}>;tag=${this.fromTag}`,
+      `From: "${fromName}" <sip:${fromUser}@${this.cfg.domain}>;tag=${this.fromTag}`,
       `To: "${d.number}" <${d.uri}>`,
       `Call-ID: ${d.callId}`,
       `CSeq: ${d.cseq} INVITE`,
@@ -412,7 +426,7 @@ class SipPhone extends EventEmitter {
       this._via(d.ackBranch || d.branch),
       `Max-Forwards: 70`,
       ...this._routeLines(d),
-      `From: <sip:${this.user}@${this.cfg.domain}>;tag=${this.fromTag}`,
+      `From: <sip:${(d && d.fromUser) || this.user}@${this.cfg.domain}>;tag=${this.fromTag}`,
       toTagLine,
       `Call-ID: ${d.callId}`,
       `CSeq: ${d.cseq} ACK`,
@@ -438,7 +452,7 @@ class SipPhone extends EventEmitter {
       this._via(rnd(8)),
       `Max-Forwards: 70`,
       ...this._routeLines(d),
-      `From: <sip:${this.user}@${this.cfg.domain}>;tag=${this.fromTag}`,
+      `From: <sip:${(d && d.fromUser) || this.user}@${this.cfg.domain}>;tag=${this.fromTag}`,
       `To: <${d.uri}>` + (d.toTag ? `;tag=${d.toTag}` : ''),
       `Call-ID: ${d.callId}`,
       `CSeq: ${cseq} BYE`,
@@ -453,7 +467,7 @@ class SipPhone extends EventEmitter {
       `CANCEL ${d.uri} SIP/2.0`,
       this._via(d.branch),
       `Max-Forwards: 70`,
-      `From: <sip:${this.user}@${this.cfg.domain}>;tag=${this.fromTag}`,
+      `From: <sip:${(d && d.fromUser) || this.user}@${this.cfg.domain}>;tag=${this.fromTag}`,
       `To: <${d.uri}>`,
       `Call-ID: ${d.callId}`,
       `CSeq: ${d.cseq} CANCEL`,
@@ -473,7 +487,7 @@ class SipPhone extends EventEmitter {
         this._via(rnd(8)),
         `Max-Forwards: 70`,
         ...this._routeLines(d),
-        `From: <sip:${this.user}@${this.cfg.domain}>;tag=${this.fromTag}`,
+        `From: <sip:${(d && d.fromUser) || this.user}@${this.cfg.domain}>;tag=${this.fromTag}`,
         `To: <${d.uri}>` + (d.toTag ? `;tag=${d.toTag}` : ''),
         `Call-ID: ${d.callId}`,
         `CSeq: ${cseq} INFO`,
@@ -532,7 +546,10 @@ class SipPhone extends EventEmitter {
       if (/^\d+$/.test(eh)) granted = parseInt(eh, 10);
       else { const m = /expires=(\d+)/i.exec(msg.headers['contact'] || ''); if (m) granted = parseInt(m[1], 10); }
       if (!(granted > 0)) granted = 300;
-      const refreshMs = Math.max(30, Math.floor(granted * 0.8)) * 1000;
+      // Refresh at 80% of the granted lifetime, floored low enough to beat a
+      // short expiry — ConnexCS sometimes grants ~20s, and a 30s floor would let
+      // the registration lapse between calls. Never below 10s.
+      const refreshMs = Math.max(10, Math.min(Math.floor(granted * 0.8), granted - 5)) * 1000;
       if (this.regTimer) clearInterval(this.regTimer);
       this.regTimer = setInterval(() => this.register(), refreshMs);
       this.emit('status', 'registered (expires ' + granted + 's, refresh ' + Math.round(refreshMs / 1000) + 's)');
@@ -599,7 +616,7 @@ class SipPhone extends EventEmitter {
       `ACK ${d.uri} SIP/2.0`,
       this._via(d.branch),
       `Max-Forwards: 70`,
-      `From: <sip:${this.user}@${this.cfg.domain}>;tag=${this.fromTag}`,
+      `From: <sip:${(d && d.fromUser) || this.user}@${this.cfg.domain}>;tag=${this.fromTag}`,
       `To: ${toH.replace(/^To:\s*/i, '')}`,
       `Call-ID: ${d.callId}`,
       `CSeq: ${d.cseq} ACK`,

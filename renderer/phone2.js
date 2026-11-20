@@ -20,7 +20,7 @@
   let wantTap = false;
   let nativeStarted = false;
 
-  const PHONE2_BUILD = '0.9.29';
+  const PHONE2_BUILD = '0.9.30';
   const diag = [];
   function logDiag(line) {
     const t = new Date().toTimeString().slice(0, 8);
@@ -313,7 +313,7 @@
     if (window.TopCaptions) window.TopCaptions.callStarted(8000);
     try { await window.NativeAudio.start(); } catch (_) {}
     if (window.TopCaptions && window.TopCaptions.isEnabled && window.TopCaptions.isEnabled()) startTap();
-    try { await window.portal.nativeCall(num); } catch (e) { setStatus('Call failed'); endCall(); }
+    try { await window.portal.nativeCall(num, callerId || ''); } catch (e) { setStatus('Call failed'); endCall(); }
   }
   function hangup() {
     try { window.portal.nativeHangup(); } catch (_) {}
