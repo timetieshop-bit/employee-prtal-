@@ -261,7 +261,7 @@ class SipPhone extends EventEmitter {
   // in the Via that doesn't match the real source looks like spoofing to a
   // NAT-aware switch (ConnexCS) and gets dropped; a private IP forces it to use
   // rport and reply to our actual source, which always reaches us.
-  _via(branch) { return `SIP/2.0/UDP ${this.localIp}:${this.localPort};branch=z9hG4bK${branch};rport`; }
+  _via(branch) { return `Via: SIP/2.0/UDP ${this.localIp}:${this.localPort};branch=z9hG4bK${branch};rport`; }
   // Contact advertises the PUBLIC (STUN) address + a stable rinstance, so the
   // switch knows where to route in-dialog/inbound traffic. eyeBeam does the same.
   _contact() { return `<sip:${this.user}@${this.advIp()}:${this.advPort()};rinstance=${this.rinstance}>`; }
