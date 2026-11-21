@@ -121,6 +121,11 @@ class InboundPhone extends EventEmitter {
     const c = this.cfg;
     const uri = `sip:${c.serviceHost}`;
     const cseq = this.regCseq++;
+    if (!auth) this.emit('status', 'registering to ' + c.serviceHost + ':' + c.servicePort + ' as ' + c.ext + '…');
+    if (this._regWatch) clearTimeout(this._regWatch);
+    this._regWatch = setTimeout(() => {
+      if (!this.registered) this.emit('registerFailed', 'no response from queue service at ' + c.serviceHost + ':' + c.servicePort + ' — check it is running and UDP ' + c.servicePort + ' is open');
+    }, 6000);
     const lines = [
       `REGISTER ${uri} SIP/2.0`,
       this._via(rnd(8)),
@@ -139,6 +144,7 @@ class InboundPhone extends EventEmitter {
     this._send(lines.join('\r\n'));
   }
   _onRegisterResp(msg) {
+    if (this._regWatch) { clearTimeout(this._regWatch); this._regWatch = null; }
     if (msg.status === 401 || msg.status === 403) {
       if (msg.status === 403 || ++this.regAuthTries > 3) { this.registered = false; this.emit('registerFailed', 'auth rejected'); this.regAuthTries = 0; return; }
       const h = msg.headers['www-authenticate']; if (!h) return this.emit('registerFailed', 'no challenge');

@@ -1,56 +1,49 @@
 // ===========================================================================
-// Inbound ACD phone (the third phone). Compact, draggable, captions-capable.
-// No keypad or contacts — inbound only. Availability (active/pause), live queue
-// count, agent roster, caller display + copy, hold/mute/transfer/end.
-//
-// Server presence/queue come from acd_agent.php (polled via the main process).
-// The live call itself is handled by the native inbound SIP stack and surfaced
-// through window.portal.onInbound* events; where those aren't present yet the
-// UI still reflects the server's view of the agent's current call.
+// Inbound ACD phone (third phone). Compact, draggable. Single Active/Pause
+// toggle. While Active, a routed call auto-answers. Closing the panel (✕) or
+// minimizing never drops a live call — the Support pill shows an on-call badge
+// until the agent ends it. Captions use the global captions button only.
 // ===========================================================================
 (function inbound() {
   const P = window.portal;
   if (!P || !P.inboundConfig) return;
   const $ = (id) => document.getElementById(id);
 
-  const btn    = $('inbound-btn');
-  const panel  = $('inbound-panel');
+  const btn   = $('inbound-btn');
+  const panel = $('inbound-panel');
   if (!btn || !panel) return;
 
-  const INBOUND_BUILD = '0.9.34';
-  let cfg = null;
-  let viewTimer = null;
-  let logLines = [];
+  const INBOUND_BUILD = '0.9.35';
+  let cfg = null, viewTimer = null, logLines = [];
   let callTimer = null, callStart = 0;
-  let ccOn = false, muteOn = false, holdOn = false;
-  let ringing = null;   // { caller, via } while a call is ringing at this agent
-  let onCall = null;    // { caller, via } while connected
+  let muteOn = false, holdOn = false;
+  let availActive = false;      // our chosen availability
+  let onCall = null;            // { caller, via } while connected
   let lastRoster = [];
 
   function log(line) {
-    const ts = new Date().toLocaleTimeString();
-    logLines.push('[' + ts + '] ' + line);
+    logLines.push('[' + new Date().toLocaleTimeString() + '] ' + line);
     if (logLines.length > 300) logLines = logLines.slice(-300);
     const pre = $('inb-logs-pre'); if (pre) pre.textContent = logLines.join('\n');
     try { P.acdLog && P.acdLog(line); } catch (_) {}
   }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
-  // ---- config gating ----
+  // ---- config ----
   function applyConfig(c) {
     cfg = c && typeof c === 'object' ? c : null;
     if (!cfg) { btn.hidden = true; panel.hidden = true; stopPolling(); return; }
     btn.hidden = false;
     const tx = $('inbound-btn-tx'); if (tx) tx.textContent = cfg.label || 'Support';
     const title = $('inb-title'); if (title) title.textContent = cfg.label || 'Support';
-    log('Inbound phone ' + INBOUND_BUILD + ' configured (ext ' + (cfg.ext || '?') + ', service ' + (cfg.serviceHost || '?') + ':' + (cfg.servicePort || '?') + ')');
+    log('Inbound ' + INBOUND_BUILD + ' configured (ext ' + (cfg.ext || '?') + ' → ' + (cfg.serviceHost || '?') + ':' + (cfg.servicePort || '?') + ')');
     startPolling();
-    // Ask the native layer (if present) to register this agent to the queue service.
     try { P.inboundStart && P.inboundStart(cfg); } catch (_) {}
   }
   try { applyConfig(P.inboundConfig()); } catch (_) {}
   if (P.onInboundConfig) P.onInboundConfig(applyConfig);
 
-  // ---- panel open/close + dragging ----
+  // ---- panel open/close (✕ and the pill never hang up a call) ----
   btn.addEventListener('click', () => { panel.hidden = !panel.hidden; if (!panel.hidden) refreshView(); });
   $('inb-min').addEventListener('click', () => { panel.hidden = true; });
 
@@ -61,110 +54,92 @@
       if (e.target.closest('.inb-ic')) return;
       dragging = true; sx = e.clientX; sy = e.clientY;
       const r = panel.getBoundingClientRect(); ox = r.left; oy = r.top;
-      panel.style.right = 'auto'; panel.style.bottom = 'auto';
-      panel.style.left = ox + 'px'; panel.style.top = oy + 'px';
+      panel.style.right = 'auto'; panel.style.bottom = 'auto'; panel.style.left = ox + 'px'; panel.style.top = oy + 'px';
       e.preventDefault();
     });
     window.addEventListener('mousemove', (e) => {
       if (!dragging) return;
-      let nx = ox + (e.clientX - sx), ny = oy + (e.clientY - sy);
-      nx = Math.max(4, Math.min(window.innerWidth - 80, nx));
-      ny = Math.max(4, Math.min(window.innerHeight - 60, ny));
+      let nx = Math.max(4, Math.min(window.innerWidth - 80, ox + (e.clientX - sx)));
+      let ny = Math.max(4, Math.min(window.innerHeight - 60, oy + (e.clientY - sy)));
       panel.style.left = nx + 'px'; panel.style.top = ny + 'px';
     });
     window.addEventListener('mouseup', () => { dragging = false; });
   })();
 
-  // ---- availability ----
-  async function setAvail(action) {
-    try { const r = await P.acdSet(action); if (r && r.view) paintView(r.view); } catch (_) {}
-    log('availability → ' + action);
-  }
-  $('inb-active').addEventListener('click', () => setAvail('active'));
-  $('inb-pause').addEventListener('click', () => setAvail('pause'));
+  // ---- single availability toggle ----
+  $('inb-toggle').addEventListener('click', async () => {
+    const next = availActive ? 'pause' : 'active';
+    try { const r = await P.acdSet(next); if (r && r.view) paintView(r.view); } catch (_) {}
+    log('availability → ' + next);
+  });
 
-  // ---- polling the server view (presence, queue, roster, my call) ----
-  function startPolling() {
-    stopPolling();
-    refreshView();
-    viewTimer = setInterval(refreshView, 2500);
-  }
+  // ---- polling ----
+  function startPolling() { stopPolling(); refreshView(); viewTimer = setInterval(refreshView, 2500); }
   function stopPolling() { if (viewTimer) { clearInterval(viewTimer); viewTimer = null; } }
-
-  async function refreshView() {
-    try { const r = await P.acdView(); if (r && r.ok && r.view) paintView(r.view); } catch (_) {}
-  }
+  async function refreshView() { try { const r = await P.acdView(); if (r && r.ok && r.view) paintView(r.view); } catch (_) {} }
 
   function paintView(v) {
-    // availability buttons
     const st = (v.me && v.me.status) || 'offline';
-    $('inb-active').classList.toggle('on', st === 'active');
-    $('inb-pause').classList.toggle('on', st === 'paused');
+    availActive = (st === 'active' || st === 'incall');
+    const registered = !!(v.me && v.me.registered);
+
+    // toggle look
+    const tg = $('inb-toggle'), tx = $('inb-toggle-tx');
+    tg.dataset.on = availActive ? '1' : '0';
+    tg.classList.toggle('on', availActive);
+    tx.textContent = availActive ? 'Active — taking calls' : 'Paused';
+
+    // status pill
     const reg = $('inb-reg');
     if (reg) {
-      reg.textContent = (v.me && v.me.registered) ? (st === 'incall' ? 'on a call' : (st === 'paused' ? 'paused' : 'ready')) : 'offline';
-      reg.className = 'inb-reg ' + st;
+      const label = !registered ? 'offline' : (st === 'incall' ? 'on a call' : (availActive ? 'ready' : 'paused'));
+      reg.textContent = label; reg.className = 'inb-reg ' + (registered ? (st === 'incall' ? 'incall' : (availActive ? 'active' : 'paused')) : 'offline');
     }
-    const dot = $('inbound-dot'); if (dot) dot.title = (v.me && v.me.registered) ? 'Registered' : 'Not registered';
+    const dot = $('inbound-dot'); if (dot) dot.title = registered ? 'Registered' : 'Not registered';
 
-    // queue count
+    // queue count + badge
     const qc = (v.queue && v.queue.count) || 0;
     $('inb-qcount').textContent = qc;
     const badge = $('inbound-qbadge');
-    if (badge) { if (qc > 0) { badge.textContent = qc; badge.hidden = false; } else badge.hidden = true; }
+    if (badge) { if (qc > 0 && !onCall) { badge.textContent = qc; badge.hidden = false; } else badge.hidden = true; }
 
-    // roster
     lastRoster = v.roster || [];
     paintRoster(lastRoster);
 
-    // Reflect the server's view of my current call only if the native layer
-    // hasn't already taken over the display (native events win).
-    if (!ringing && !onCall && v.call) {
-      if (v.call.state === 'connected') showOnCall({ caller: v.call.caller, via: v.call.name || v.call.did }, v.call.dur || 0);
-      else if (v.call.state === 'ringing') showIncoming({ caller: v.call.caller, via: v.call.name || v.call.did });
-    }
-    if ((!v.call) && !ringingFromNative && !onCallFromNative) { hideIncoming(); if (!onCallFromNative) hideOnCall(); }
+    // reflect a server-known call if the native layer hasn't surfaced it
+    if (!onCall && v.call && v.call.state === 'connected') showOnCall({ caller: v.call.caller, via: v.call.name || v.call.did }, v.call.dur || 0);
   }
 
   function paintRoster(roster) {
     const wrap = $('inb-roster'); if (!wrap) return;
-    const others = roster;
-    if (!others.length) { wrap.innerHTML = '<div class="inb-muted">No one online.</div>'; return; }
-    wrap.innerHTML = others.map((r) =>
+    if (!roster.length) { wrap.innerHTML = '<div class="inb-muted">No one online.</div>'; return; }
+    wrap.innerHTML = roster.map((r) =>
       '<div class="inb-ra"><span class="inb-pill ' + r.status + '">' + r.status + '</span>' +
-      '<span class="inb-ra-nm">' + escapeHtml(r.name) + (r.self ? ' <span class="inb-muted">(you)</span>' : '') + '</span></div>'
-    ).join('');
+      '<span class="inb-ra-nm">' + esc(r.name) + (r.self ? ' <span class="inb-muted">(you)</span>' : '') + '</span></div>').join('');
   }
 
-  // ---- incoming / on-call UI ----
-  function showIncoming(info) {
-    ringing = info;
-    $('inb-ring-num').textContent = info.caller || 'Unknown';
-    $('inb-ring-via').textContent = info.via ? ('on ' + info.via) : '';
-    $('inb-incoming').hidden = false;
-    $('inb-oncall').hidden = true;
-    panel.hidden = false;
-    playRing(true);
+  // ---- on-call UI ----
+  function setPillOnCall(on) {
+    btn.classList.toggle('oncall', on);
+    const tx = $('inbound-btn-tx'); if (tx && cfg) tx.textContent = on ? 'On call' : (cfg.label || 'Support');
   }
-  function hideIncoming() { ringing = null; $('inb-incoming').hidden = true; playRing(false); }
-
   function showOnCall(info, startSecs) {
     onCall = info;
-    hideIncoming();
     $('inb-call-num').textContent = info.caller || 'Unknown';
-    $('inb-call-via').textContent = info.via ? ('on ' + info.via) : '';
+    $('inb-call-via').textContent = info.via ? ('on ' + info.via) : 'inbound call';
     $('inb-oncall').hidden = false;
     panel.hidden = false;
     callStart = Date.now() - (startSecs || 0) * 1000;
     startCallTimer();
+    setPillOnCall(true);
+    const b = $('inbound-qbadge'); if (b) b.hidden = true;
   }
   function hideOnCall() {
     onCall = null; stopCallTimer();
-    $('inb-oncall').hidden = true;
-    $('inb-xfer-list').hidden = true;
+    $('inb-oncall').hidden = true; $('inb-xfer-list').hidden = true;
     holdOn = muteOn = false; paintToggles();
+    setPillOnCall(false);
   }
-
   function startCallTimer() {
     stopCallTimer();
     callTimer = setInterval(() => {
@@ -174,41 +149,14 @@
   }
   function stopCallTimer() { if (callTimer) { clearInterval(callTimer); callTimer = null; } }
 
-  // ---- ringtone (WebAudio; no asset needed) ----
-  let ac = null, ringOsc = null, ringGain = null, ringInt = null;
-  function playRing(on) {
-    try {
-      if (on) {
-        if (ringInt) return;
-        ac = ac || new (window.AudioContext || window.webkitAudioContext)();
-        const beat = () => {
-          const o = ac.createOscillator(), g = ac.createGain();
-          o.frequency.value = 480; o.type = 'sine';
-          g.gain.setValueAtTime(0.0001, ac.currentTime);
-          g.gain.exponentialRampToValueAtTime(0.18, ac.currentTime + 0.05);
-          g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.9);
-          o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime + 1);
-        };
-        beat(); ringInt = setInterval(beat, 2000);
-      } else if (ringInt) { clearInterval(ringInt); ringInt = null; }
-    } catch (_) {}
-  }
-
-  // ---- call controls (native layer; guarded until wired) ----
-  function callBridge(name, ...args) {
-    try { if (P[name]) return P[name](...args); } catch (_) {}
-    log('(' + name + ' not available yet)');
-    return null;
-  }
-  $('inb-answer').addEventListener('click', () => { log('answer'); callBridge('inboundAnswer'); });
-  $('inb-reject').addEventListener('click', () => { log('reject'); callBridge('inboundReject'); hideIncoming(); });
-  $('inb-end').addEventListener('click', () => { log('end'); callBridge('inboundHangup'); });
-  $('inb-hold').addEventListener('click', () => { holdOn = !holdOn; callBridge('inboundHold', holdOn); paintToggles(); log('hold ' + holdOn); });
-  $('inb-mute').addEventListener('click', () => { muteOn = !muteOn; callBridge('inboundMute', muteOn); paintToggles(); log('mute ' + muteOn); });
-
+  // ---- call controls ----
+  function bridge(name, ...a) { try { if (P[name]) return P[name](...a); } catch (_) {} log('(' + name + ' unavailable)'); }
+  $('inb-end').addEventListener('click', () => { log('end'); bridge('inboundHangup'); });
+  $('inb-hold').addEventListener('click', () => { holdOn = !holdOn; bridge('inboundHold', holdOn); paintToggles(); log('hold ' + holdOn); });
+  $('inb-mute').addEventListener('click', () => { muteOn = !muteOn; bridge('inboundMute', muteOn); paintToggles(); log('mute ' + muteOn); });
   function paintToggles() {
     $('inb-hold').classList.toggle('on', holdOn);
-    $('inb-hold').textContent = holdOn ? '▶ Resume' : '⏸ Hold';
+    $('inb-hold').innerHTML = holdOn ? '▶<span>Resume</span>' : '⏸<span>Hold</span>';
     $('inb-mute').classList.toggle('on', muteOn);
   }
 
@@ -218,78 +166,58 @@
     if (!list.hidden) { list.hidden = true; return; }
     const targets = lastRoster.filter((r) => !r.self && r.status === 'active');
     list.innerHTML = targets.length
-      ? targets.map((r) => '<button class="inb-xfer-t" data-uid="' + r.user_id + '">' + escapeHtml(r.name) + '</button>').join('')
-      : '<div class="inb-muted" style="padding:6px 8px">No available agents to transfer to.</div>';
+      ? targets.map((r) => '<button class="inb-xfer-t" data-uid="' + r.user_id + '">' + esc(r.name) + '</button>').join('')
+      : '<div class="inb-muted" style="padding:6px 8px">No available agents.</div>';
     list.hidden = false;
   });
   $('inb-xfer-list').addEventListener('click', (e) => {
     const b = e.target.closest('.inb-xfer-t'); if (!b) return;
-    const uid = Number(b.dataset.uid);
-    log('transfer → user ' + uid);
-    callBridge('inboundTransfer', uid);
-    $('inb-xfer-list').hidden = true;
+    log('transfer → user ' + b.dataset.uid); bridge('inboundTransfer', Number(b.dataset.uid)); $('inb-xfer-list').hidden = true;
   });
 
-  // ---- copy caller number ----
-  function copyNum(id) {
-    const t = $(id); if (!t) return;
-    const num = t.textContent.trim();
-    if (!num || num === '—') return;
-    try { navigator.clipboard.writeText(num); } catch (_) {}
-    log('copied caller ' + num);
-  }
-  $('inb-ring-copy').addEventListener('click', () => copyNum('inb-ring-num'));
-  $('inb-call-copy').addEventListener('click', () => copyNum('inb-call-num'));
-
-  // ---- captions + logs toggles ----
-  $('inb-cc').addEventListener('click', () => {
-    ccOn = !ccOn;
-    $('inb-cc').setAttribute('aria-pressed', ccOn ? 'true' : 'false');
-    $('inb-cc').classList.toggle('on', ccOn);
-    applyCaptionTap();
-    log('captions ' + ccOn);
+  // ---- copy ----
+  $('inb-call-copy').addEventListener('click', () => {
+    const num = $('inb-call-num').textContent.trim();
+    if (num && num !== '—') { try { navigator.clipboard.writeText(num); } catch (_) {} log('copied ' + num); }
   });
-  // Feed the inbound call audio to the shared captions engine while enabled.
-  function applyCaptionTap() {
-    try {
-      if (!window.InboundAudio) return;
-      if (ccOn && onCallFromNative) window.InboundAudio.setPcmTap((i16) => { if (window.TopCaptions) window.TopCaptions.pushExternal(i16); });
-      else window.InboundAudio.setPcmTap(null);
-    } catch (_) {}
-  }
+
+  // ---- logs ----
   $('inb-logs-btn').addEventListener('click', () => {
     const l = $('inb-logs'); l.hidden = !l.hidden;
     if (!l.hidden) $('inb-logs-pre').textContent = logLines.join('\n') || '—';
   });
 
-  // ---- native call events (lit up by the inbound SIP stack in the next phase) ----
-  let ringingFromNative = false, onCallFromNative = false;
+  // ---- native call events ----
   if (P.onInboundEvent) P.onInboundEvent((ev) => {
     if (!ev || !ev.type) return;
-    if (ev.type === 'incoming') { ringingFromNative = true; showIncoming({ caller: ev.caller, via: ev.via }); log('INVITE from ' + ev.caller + (ev.via ? ' on ' + ev.via : '')); }
-    else if (ev.type === 'answered') {
-      ringingFromNative = false; onCallFromNative = true; showOnCall({ caller: ev.caller, via: ev.via }, 0);
+    if (ev.type === 'incoming') {
+      log('incoming from ' + ev.caller + (ev.via ? ' on ' + ev.via : '') + ' — answering');
+      try { P.inboundAnswer && P.inboundAnswer(); } catch (_) {} // auto-answer while active
+    } else if (ev.type === 'answered') {
+      showOnCall({ caller: ev.caller, via: ev.via }, 0);
       try { window.InboundAudio && window.InboundAudio.start(); } catch (_) {}
       try { if (window.TopCaptions) window.TopCaptions.callStarted(8000); } catch (_) {}
-      applyCaptionTap();
+      startCaptionTap();
       log('answered');
-    }
-    else if (ev.type === 'ended') {
-      ringingFromNative = false; onCallFromNative = false; hideOnCall(); hideIncoming();
+    } else if (ev.type === 'ended') {
       try { window.InboundAudio && window.InboundAudio.setPcmTap(null); } catch (_) {}
       try { window.InboundAudio && window.InboundAudio.stop(); } catch (_) {}
       try { if (window.TopCaptions) window.TopCaptions.callEnded(); } catch (_) {}
+      hideOnCall();
       log('call ended (' + (ev.reason || '') + ')');
-    }
-    else if (ev.type === 'registered') { log('registered to queue service'); }
-    else if (ev.type === 'registerFailed') { log('register FAILED: ' + (ev.reason || '')); }
+    } else if (ev.type === 'registered') { log('registered to queue service ✓'); }
+    else if (ev.type === 'registerFailed') { log('REGISTER FAILED: ' + (ev.reason || '')); }
     else if (ev.type === 'status') { log(ev.text || ''); }
     else if (ev.type === 'debug') { log('· ' + (ev.text || '')); }
   });
 
-  function escapeHtml(s) {
-    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // Feed the inbound audio to the global captions engine; it only transcribes
+  // when the global captions button is on (isEnabled()).
+  function startCaptionTap() {
+    try {
+      if (!window.InboundAudio) return;
+      window.InboundAudio.setPcmTap((i16) => { if (window.TopCaptions && window.TopCaptions.isEnabled && window.TopCaptions.isEnabled()) window.TopCaptions.pushExternal(i16); });
+    } catch (_) {}
   }
 
   log('Inbound phone script ' + INBOUND_BUILD + ' loaded');
