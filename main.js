@@ -849,8 +849,12 @@ function pushSuperviseState() {
     try { mainWindow.webContents.send('supervise:state', supervising); } catch (_) {}
   }
 }
+// Self-scheduling capture loop: each frame waits for the previous POST to finish,
+// so a slow upload can't pile up overlapping captures.
+let captureBusy = false;
 async function captureAndSend() {
-  if (!supervising || !mainWindow || mainWindow.isDestroyed()) return;
+  if (!supervising || captureBusy || !mainWindow || mainWindow.isDestroyed()) return;
+  captureBusy = true;
   try {
     const img = await mainWindow.webContents.capturePage();
     const sz = img.getSize();
@@ -858,8 +862,20 @@ async function captureAndSend() {
     const jpeg = frame.toJPEG(42); // Buffer
     const res = await apiCall('supervise_frame.php', 'POST', { frame: jpeg.toString('base64') });
     if (res && res.watching === false) setSupervising(false); // admin stopped watching
-  } catch (_) { /* transient; next tick */ }
+  } catch (_) { /* transient; next tick */ } finally { captureBusy = false; }
 }
+
+// Lightweight poll so capture starts within ~2s of an admin opening the viewer,
+// without waiting for the slow config poll.
+let supervisePollTimer = null;
+function startSupervisePoll() {
+  stopSupervisePoll();
+  supervisePollTimer = setInterval(async () => {
+    if (!currentToken) return;
+    try { const r = await apiCall('supervise_poll.php', 'GET'); if (r && typeof r.supervised !== 'undefined') setSupervising(!!r.supervised); } catch (_) {}
+  }, 2500);
+}
+function stopSupervisePoll() { if (supervisePollTimer) { clearInterval(supervisePollTimer); supervisePollTimer = null; } }
 // ---- Remote control: inject the admin's input into the portal / active webview ----
 let superviseGeom = null;        // { vw, vh, wv:{id,x,y,w,h} } reported by the renderer
 let superviseInputTimer = null;
@@ -1124,6 +1140,7 @@ ipcMain.handle('auth:login', async (_event, { username, password }) => {
     currentSheets = Array.isArray(data.sheets) ? data.sheets : []; // names only
     pushSheets();
     startConfigPoll();                    // keep pulling changes from the server
+    startSupervisePoll();                 // fast detection of supervisor viewing
 
     return {
       ok: true,
@@ -1197,6 +1214,43 @@ ipcMain.handle('vault:save', async () => {
 ipcMain.handle('vault:dismiss', () => { pendingVault = null; return { ok: true }; });
 ipcMain.handle('vault:list', async () => { try { return await apiCall('credentials.php', 'GET'); } catch (_) { return { ok: false, items: [] }; } });
 ipcMain.handle('vault:delete', async (_e, id) => { try { return await apiCall('credentials.php', 'DELETE', { id: parseInt(id, 10) }); } catch (_) { return { ok: false }; } });
+
+// ---- Admin screen supervision VIEWER (runs inside this portal for admins) ----
+// The admin's own portal pulls another agent's frames and pushes input. This is
+// the mirror image of the agent-side capture loop above; both can coexist because
+// the server tells them apart by direction (admin GETs frames / POSTs input;
+// agent POSTs frames / GETs input).
+ipcMain.handle('sv:list', async () => {
+  try { return await apiCall('monitoring.php', 'GET'); } catch (_) { return { ok: false, users: [] }; }
+});
+ipcMain.handle('sv:start', async (_e, uid) => {
+  try { return await apiCall('supervise.php', 'POST', { action: 'start', user_id: parseInt(uid, 10) }); } catch (_) { return { ok: false }; }
+});
+ipcMain.handle('sv:stop', async (_e, uid) => {
+  try { return await apiCall('supervise.php', 'POST', { action: 'stop', user_id: parseInt(uid, 10) }); } catch (_) { return { ok: false }; }
+});
+ipcMain.handle('sv:heartbeat', async (_e, uid) => {
+  try { return await apiCall('supervise.php', 'POST', { action: 'heartbeat', user_id: parseInt(uid, 10) }); } catch (_) { return { ok: false }; }
+});
+ipcMain.handle('sv:input', async (_e, uid, events) => {
+  try { return await apiCall('supervise_input.php', 'POST', { user_id: parseInt(uid, 10), events: events || [] }); } catch (_) { return { ok: false }; }
+});
+// Pull one JPEG frame for the admin viewer. supervise_frame.php returns raw
+// image/jpeg (200), 204 when there is no frame yet, or 401/403. We hand the
+// renderer a ready-to-use data URL so it needs no server URL or token of its own.
+ipcMain.handle('sv:frame', async (_e, uid) => {
+  try {
+    const headers = {};
+    if (currentToken) headers['X-Auth-Token'] = currentToken;
+    const r = await fetch(`${API_BASE}/supervise_frame.php?user_id=${parseInt(uid, 10)}&t=${Date.now()}`,
+      { method: 'GET', headers, cache: 'no-store' });
+    if (r.status === 200) {
+      const buf = Buffer.from(await r.arrayBuffer());
+      return { ok: true, status: 200, dataUrl: 'data:image/jpeg;base64,' + buf.toString('base64') };
+    }
+    return { ok: true, status: r.status };
+  } catch (_) { return { ok: false, status: 0 }; }
+});
 
 // ---- Native (UDP) SIP softphone: direct-to-trunk calling, no WSS/VPS ----
 let nativePhone = null;
@@ -1341,6 +1395,7 @@ ipcMain.handle('auth:logout', async () => {
     gateExit = false;
     stopAppBlocker();
     stopConfigPoll();
+    stopSupervisePoll();
     setSupervising(false);
     return r;
   } catch (e) { return { ok: false, error: 'network' }; }

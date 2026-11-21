@@ -1290,3 +1290,55 @@ html, body {
 .wall-clock { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 13px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); box-sizing: border-box; }
 .wall-clock-ic { width: 15px; height: 15px; color: var(--muted); flex: none; }
 .wall-clock-tx { font-size: 13px; font-weight: 700; color: var(--text, #202124); font-variant-numeric: tabular-nums; letter-spacing: .3px; white-space: nowrap; }
+
+/* ===================== Admin: live-agent supervision ===================== */
+/* Slide-out panel listing agents who are online right now. */
+.sv-panel {
+  position: fixed; right: 24px; bottom: 24px; z-index: 72; width: 340px;
+  max-width: calc(100vw - 32px); max-height: calc(100vh - 110px);
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(20,25,60,.38); overflow: hidden;
+}
+.sv-panel-head { display: flex; align-items: center; gap: 10px; padding: 13px 15px; color: #fff; background: linear-gradient(135deg, #0f172a, #1e3a8a); }
+.sv-panel-title { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.sv-panel-eye { width: 22px; height: 22px; flex: none; opacity: .95; }
+.sv-panel-h1 { font-weight: 700; font-size: 14.5px; line-height: 1.1; }
+.sv-panel-h2 { font-size: 11px; opacity: .82; margin-top: 2px; }
+.sv-panel-actions { margin-left: auto; display: flex; gap: 6px; }
+.sv-ic-sm { width: 28px; height: 28px; border: none; border-radius: 8px; background: rgba(255,255,255,.14); color: #fff; cursor: pointer; font-size: 14px; }
+.sv-ic-sm:hover { background: rgba(255,255,255,.28); }
+.sv-panel-body { flex: 1 1 auto; overflow-y: auto; padding: 8px; background: var(--bg); }
+.sv-list { display: flex; flex-direction: column; gap: 7px; }
+.sv-row { display: flex; align-items: center; gap: 11px; padding: 9px 11px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; transition: box-shadow .12s, transform .12s; }
+.sv-row:hover { box-shadow: 0 3px 12px rgba(20,25,60,.1); }
+.sv-ava { width: 36px; height: 36px; flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: #fff; font-size: 15px; background: linear-gradient(135deg, #2563eb, #4f46e5); }
+.sv-row-main { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.sv-row-name { font-weight: 650; font-size: 13.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sv-row-sub { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.sv-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.18); }
+.sv-watch-btn { flex: none; border: none; cursor: pointer; border-radius: 999px; padding: 7px 13px; font-size: 12px; font-weight: 650; color: #fff; background: #2563eb; box-shadow: 0 1px 3px rgba(37,99,235,.4); }
+.sv-watch-btn:hover { background: #1d4ed8; }
+.sv-list-empty { padding: 28px 16px; text-align: center; color: var(--muted); font-size: 13px; }
+
+/* Full-screen viewer (professional, matches the web admin). */
+.sv-modal { position: fixed; inset: 0; background: rgba(10,12,16,.78); backdrop-filter: blur(3px); display: grid; place-items: center; z-index: 420; }
+.sv-modal[hidden] { display: none; }
+.sv-box { max-width: 1240px; width: 94vw; border-radius: 16px; overflow: hidden; background: #0e1116; box-shadow: 0 24px 70px rgba(0,0,0,.6); border: 1px solid #262b33; }
+.sv-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 11px 16px; background: linear-gradient(#1b2027,#141920); border-bottom: 1px solid #262b33; color: #e6e9ee; }
+.sv-left { display: flex; align-items: center; gap: 13px; min-width: 0; }
+.sv-live { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 800; letter-spacing: .6px; color: #ff5a52; }
+.sv-live .d { width: 9px; height: 9px; border-radius: 50%; background: #ff5a52; animation: svpulse 1.3s infinite; }
+@keyframes svpulse { 0%{box-shadow:0 0 0 0 rgba(255,90,82,.6);} 70%{box-shadow:0 0 0 7px rgba(255,90,82,0);} 100%{box-shadow:0 0 0 0 rgba(255,90,82,0);} }
+.sv-who { font-size: 15px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sv-sub { font-size: 12px; color: #9aa3af; white-space: nowrap; }
+.sv-tb-actions { display: flex; align-items: center; gap: 8px; }
+.sv-tbtn { background: #222932; color: #e6e9ee; border: 1px solid #333b45; border-radius: 9px; padding: 7px 13px; font-size: 12.5px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.sv-tbtn:hover { background: #2b333d; }
+.sv-tbtn.on { background: #198754; border-color: #198754; color: #fff; }
+.sv-tbtn.close:hover { background: #3a2323; border-color: #5a3030; color: #ffb4ad; }
+.sv-stage { position: relative; background: #000; display: flex; align-items: center; justify-content: center; min-height: 340px; max-height: 82vh; }
+#sv-img { max-width: 100%; max-height: 82vh; display: none; outline: none; user-select: none; -webkit-user-drag: none; }
+.sv-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: #8b94a0; font-size: 13px; }
+.sv-spin { width: 34px; height: 34px; border: 3px solid #2a313b; border-top-color: #5b9dff; border-radius: 50%; animation: svspin .8s linear infinite; }
+@keyframes svspin { to { transform: rotate(360deg); } }

@@ -56,7 +56,7 @@
   <!-- CONSENT VIEW -->
   <section id="consent-view" class="login" hidden>
     <div class="card consent-card">
-      <h1>Monitoring notice</h1>
+      <h1>Welcome</h1>
       <p id="consent-body" class="consent-body"></p>
       <div class="consent-actions">
         <button id="consent-decline" type="button" class="secondary-btn">Decline &amp; exit</button>
@@ -68,14 +68,14 @@
   <!-- PORTAL VIEW -->
   <section id="portal-view" class="portal" hidden>
     <header class="topbar">
-      <div class="brand"><span class="brand-logo" aria-hidden="true">E</span><span class="brand-name">Employee Portal</span><span id="app-version-top" class="app-version-top"></span></div>
-      <div class="who">Signed in as <b id="who-name">—</b></div>
-      <span id="cam-indicator" class="cam-indicator" hidden><span class="cam-pulse"></span>Camera on</span>
+      <div class="brand"><span class="brand-logo" aria-hidden="true">E</span><b id="who-name" class="brand-name">—</b></div>
+      <span id="app-version-top" class="app-version-top" hidden></span>
+      <!-- <span id="cam-indicator" class="cam-indicator" hidden><span class="cam-pulse"></span>Camera on</span> -->
       <div class="spacer"></div>
 
       <!-- Quick-tool pills -->
       <button id="bcc-btn" class="pilltool cc-toggle" hidden title="Live captions on/off" aria-pressed="false" aria-label="Captions">
-        <span class="pill-tx">Captions</span>
+        <span class="pill-tx">CC</span>
         <span class="cc-switch" aria-hidden="true"><span class="cc-knob"></span></span>
       </button>
       <button id="btn-direct" class="pilltool" title="Chat" aria-label="Chat">
@@ -97,6 +97,13 @@
       <button id="phone2-btn" class="pillbtn" hidden title="Phone 2">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11 11 0 0 0 3.4.55 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.3a1 1 0 0 1 1 1 11 11 0 0 0 .55 3.4 1 1 0 0 1-.25 1z" fill="currentColor"/></svg>
         <span class="pill-tx" id="phone2-btn-tx">Phone 2</span><span id="phone2-dot" class="phone2-dot" title="Not ready"></span>
+      </button>
+
+      <!-- Admin only: live agent supervision -->
+      <button id="sv-btn" class="pilltool" hidden title="Live agents — view and assist screens" aria-label="Live agents">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+        <span class="pill-tx">Agents</span>
+        <span id="sv-online-badge" class="badge" hidden>0</span>
       </button>
 
       <div class="wall-clock" title="Current time">
@@ -545,6 +552,48 @@
     <button id="phone2-mini-expand" class="phone-mini-btn" title="Open phone">▢</button>
   </div>
 
+  <!-- ADMIN: live agent supervision (list of online agents) -->
+  <aside id="sv-panel" class="sv-panel" hidden>
+    <div class="sv-panel-head">
+      <div class="sv-panel-title">
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="sv-panel-eye"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+        <div>
+          <div class="sv-panel-h1">Live agents</div>
+          <div class="sv-panel-h2" id="sv-panel-sub">View and assist any signed-in screen</div>
+        </div>
+      </div>
+      <div class="sv-panel-actions">
+        <button id="sv-refresh" class="sv-ic-sm" title="Refresh">⟳</button>
+        <button id="sv-panel-close" class="sv-ic-sm" title="Close">✕</button>
+      </div>
+    </div>
+    <div class="sv-panel-body">
+      <div id="sv-list" class="sv-list"></div>
+      <div id="sv-list-empty" class="sv-list-empty" hidden>No agents are online right now.</div>
+    </div>
+  </aside>
+
+  <!-- ADMIN: full-screen live viewer with optional click/type control -->
+  <div id="sv-modal" class="sv-modal" hidden>
+    <div class="sv-box">
+      <div class="sv-toolbar">
+        <div class="sv-left">
+          <span class="sv-live"><span class="d"></span>LIVE</span>
+          <span class="sv-who" id="sv-who">Agent</span>
+          <span class="sv-sub" id="sv-status"></span>
+        </div>
+        <div class="sv-tb-actions">
+          <button id="sv-control" class="sv-tbtn" title="Click and type on the agent's screen to assist/train">🖱️ Take control</button>
+          <button id="sv-modal-close" class="sv-tbtn close" title="Stop viewing">✕ Close</button>
+        </div>
+      </div>
+      <div class="sv-stage">
+        <div class="sv-empty" id="sv-empty"><div class="sv-spin"></div><div>Connecting to the agent’s screen…</div></div>
+        <img id="sv-img" alt="Agent screen" tabindex="0" draggable="false" />
+      </div>
+    </div>
+  </div>
+
   <audio id="sip-remote" autoplay></audio>
 
   <script src="camera.js"></script>
@@ -556,5 +605,6 @@
   <script src="native-audio.js"></script>
   <script src="phone.js"></script>
   <script src="phone2.js"></script>
+  <script src="supervise.js"></script>
 </body>
 </html>

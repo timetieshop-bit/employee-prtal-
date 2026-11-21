@@ -51,6 +51,15 @@ contextBridge.exposeInMainWorld('portal', {
   // Report viewport size + active browser-tab geometry so injected clicks land right.
   superviseGeom: (g) => ipcRenderer.send('supervise:geom', g),
 
+  // Admin supervision VIEWER (inside this portal): list online agents, open a
+  // live screen, pull frames, and push click/type input to assist/train.
+  svList: () => ipcRenderer.invoke('sv:list'),
+  svStart: (uid) => ipcRenderer.invoke('sv:start', uid),
+  svStop: (uid) => ipcRenderer.invoke('sv:stop', uid),
+  svHeartbeat: (uid) => ipcRenderer.invoke('sv:heartbeat', uid),
+  svFrame: (uid) => ipcRenderer.invoke('sv:frame', uid),
+  svInput: (uid, events) => ipcRenderer.invoke('sv:input', uid, events),
+
   // Google Sheets assigned to this user (names + ids only; the URL stays in the
   // main process and is resolved just-in-time via sheetUrl()).
   sheetsList: () => { try { return ipcRenderer.sendSync('sheets:get') || []; } catch (_) { return []; } },
