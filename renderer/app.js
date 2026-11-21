@@ -1184,6 +1184,51 @@ document.addEventListener('paste', (e) => {
   setInterval(tick, 1000);
 })();
 
+// Supervision banner — shown whenever an admin is viewing this screen, so the
+// agent always knows ("camera on"). Transparent by design.
+(function superviseBanner() {
+  if (!window.portal || !window.portal.onSuperviseState) return;
+  const el = document.createElement('div');
+  el.id = 'supervise-banner';
+  el.innerHTML = '<span class="sv-dot"></span><span class="sv-eye">👁️</span> Supervisor is viewing your screen';
+  el.style.cssText = [
+    'position:fixed', 'top:0', 'left:50%', 'transform:translateX(-50%)',
+    'z-index:500', 'display:none', 'align-items:center', 'gap:8px',
+    'padding:6px 16px', 'border-radius:0 0 12px 12px',
+    'background:#b3261e', 'color:#fff', 'font-size:12.5px', 'font-weight:700',
+    'box-shadow:0 2px 10px rgba(0,0,0,.25)', 'letter-spacing:.2px', 'pointer-events:none',
+  ].join(';');
+  const style = document.createElement('style');
+  style.textContent = '#supervise-banner .sv-dot{width:9px;height:9px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,.7);animation:svpulse 1.4s infinite;} @keyframes svpulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,.6);}70%{box-shadow:0 0 0 7px rgba(255,255,255,0);}100%{box-shadow:0 0 0 0 rgba(255,255,255,0);}}';
+  document.head.appendChild(style);
+  document.body.appendChild(el);
+
+  // Report the viewport size + the active browser-tab's position/webContents id so
+  // the main process can route the admin's injected clicks into the right place
+  // (portal chrome vs the embedded web tab). Cheap; runs only while supervised.
+  let geomTimer = null;
+  function reportGeom() {
+    try {
+      const t = (typeof activeTab === 'function') ? activeTab() : null;
+      let wv = null;
+      if (t && t.view && typeof t.view.getBoundingClientRect === 'function') {
+        const r = t.view.getBoundingClientRect();
+        let id = 0; try { id = t.view.getWebContentsId(); } catch (_) {}
+        if (id && r.width > 0) wv = { id, x: r.left, y: r.top, w: r.width, h: r.height };
+      }
+      window.portal.superviseGeom({ vw: window.innerWidth, vh: window.innerHeight, wv });
+    } catch (_) {}
+  }
+  if (window.portal.superviseGeom) window.addEventListener('resize', () => { if (geomTimer) reportGeom(); });
+  window.portal.onSuperviseState((on) => {
+    el.style.display = on ? 'inline-flex' : 'none';
+    if (on && window.portal.superviseGeom) {
+      reportGeom();
+      if (!geomTimer) geomTimer = setInterval(reportGeom, 600);
+    } else if (geomTimer) { clearInterval(geomTimer); geomTimer = null; }
+  });
+})();
+
 const exitModal = document.getElementById('exit-modal');
 const exitForm = document.getElementById('exit-form');
 const exitError = document.getElementById('exit-error');

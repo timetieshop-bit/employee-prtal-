@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, ipcMain, Menu, clipboard, desktopCapturer } = require('electron');
+const { app, BrowserWindow, session, ipcMain, Menu, clipboard, desktopCapturer, webContents } = require('electron');
 const path = require('path');
 const { exec, execFile } = require('child_process');
 const crypto = require('crypto');
@@ -832,11 +832,91 @@ function startConfigPoll() {
       const sheetsBefore = JSON.stringify(currentSheets);
       const nextSheets = Array.isArray(res.sheets) ? res.sheets : [];
       if (JSON.stringify(nextSheets) !== sheetsBefore) { currentSheets = nextSheets; pushSheets(); }
+      // Live screen supervision: start/stop capturing when an admin is watching.
+      setSupervising(!!res.supervised);
     } catch (_) { /* transient network error; try again next tick */ }
   }, iv);
 }
 function stopConfigPoll() {
   if (configPollTimer) { clearInterval(configPollTimer); configPollTimer = null; }
+}
+
+// ---- Live screen supervision (admin watches the agent's portal) ----
+let supervising = false;
+let superviseTimer = null;
+function pushSuperviseState() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.webContents.send('supervise:state', supervising); } catch (_) {}
+  }
+}
+async function captureAndSend() {
+  if (!supervising || !mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    const img = await mainWindow.webContents.capturePage();
+    const sz = img.getSize();
+    const frame = (sz.width > 1366) ? img.resize({ width: 1366 }) : img;
+    const jpeg = frame.toJPEG(42); // Buffer
+    const res = await apiCall('supervise_frame.php', 'POST', { frame: jpeg.toString('base64') });
+    if (res && res.watching === false) setSupervising(false); // admin stopped watching
+  } catch (_) { /* transient; next tick */ }
+}
+// ---- Remote control: inject the admin's input into the portal / active webview ----
+let superviseGeom = null;        // { vw, vh, wv:{id,x,y,w,h} } reported by the renderer
+let superviseInputTimer = null;
+let lastInjectTarget = null;     // webContents keyboard goes to (set by last click)
+ipcMain.on('supervise:geom', (_e, g) => { superviseGeom = (g && typeof g === 'object') ? g : null; });
+
+// Browser KeyboardEvent.key -> Electron sendInputEvent keyCode for special keys.
+const EKEY = {
+  Enter: 'Return', ' ': 'Space', Backspace: 'Backspace', Tab: 'Tab', Delete: 'Delete',
+  Escape: 'Escape', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+  Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
+};
+// Pick the webContents (main window chrome vs the active browser tab) under a point.
+function superviseTargetFor(cx, cy) {
+  const g = superviseGeom;
+  if (g && g.wv && cx >= g.wv.x && cy >= g.wv.y && cx <= g.wv.x + g.wv.w && cy <= g.wv.y + g.wv.h) {
+    try { const wc = webContents.fromId(g.wv.id); if (wc && !wc.isDestroyed()) return { wc, x: Math.round(cx - g.wv.x), y: Math.round(cy - g.wv.y) }; } catch (_) {}
+  }
+  return { wc: mainWindow.webContents, x: Math.round(cx), y: Math.round(cy) };
+}
+function injectSuperviseEvent(ev) {
+  if (!ev || !mainWindow || mainWindow.isDestroyed()) return;
+  const g = superviseGeom || {};
+  let vw = g.vw, vh = g.vh;
+  if (!vw || !vh) { try { const s = mainWindow.getContentSize(); vw = s[0]; vh = s[1]; } catch (_) { vw = 1280; vh = 800; } }
+  const cx = (ev.x || 0) * vw, cy = (ev.y || 0) * vh;
+  try {
+    if (ev.t === 'm') { const g2 = superviseTargetFor(cx, cy); g2.wc.sendInputEvent({ type: 'mouseMove', x: g2.x, y: g2.y }); }
+    else if (ev.t === 'd') { const g2 = superviseTargetFor(cx, cy); lastInjectTarget = g2.wc; try { g2.wc.focus(); } catch (_) {} g2.wc.sendInputEvent({ type: 'mouseDown', x: g2.x, y: g2.y, button: ev.b === 'right' ? 'right' : 'left', clickCount: ev.c || 1 }); }
+    else if (ev.t === 'u') { const g2 = superviseTargetFor(cx, cy); g2.wc.sendInputEvent({ type: 'mouseUp', x: g2.x, y: g2.y, button: ev.b === 'right' ? 'right' : 'left', clickCount: ev.c || 1 }); }
+    else if (ev.t === 'w') { const g2 = superviseTargetFor(cx, cy); g2.wc.sendInputEvent({ type: 'mouseWheel', x: g2.x, y: g2.y, deltaX: ev.dx || 0, deltaY: ev.dy || 0, canScroll: true }); }
+    else if (ev.t === 'char') { const wc = lastInjectTarget && !lastInjectTarget.isDestroyed() ? lastInjectTarget : mainWindow.webContents; wc.sendInputEvent({ type: 'char', keyCode: String(ev.ch || '') }); }
+    else if (ev.t === 'key') { const wc = lastInjectTarget && !lastInjectTarget.isDestroyed() ? lastInjectTarget : mainWindow.webContents; const kc = EKEY[ev.k] || ev.k; const mods = Array.isArray(ev.mods) ? ev.mods : []; wc.sendInputEvent({ type: 'keyDown', keyCode: kc, modifiers: mods }); wc.sendInputEvent({ type: 'keyUp', keyCode: kc, modifiers: mods }); }
+  } catch (_) {}
+}
+async function pollSuperviseInput() {
+  if (!supervising) return;
+  try {
+    const res = await apiCall('supervise_input.php', 'GET');
+    if (res && Array.isArray(res.events)) res.events.forEach(injectSuperviseEvent);
+  } catch (_) {}
+}
+
+function setSupervising(on) {
+  on = !!on;
+  if (on === supervising) return;
+  supervising = on;
+  pushSuperviseState();
+  if (on) {
+    if (!superviseTimer) superviseTimer = setInterval(captureAndSend, 500); // ~2 fps frames
+    if (!superviseInputTimer) superviseInputTimer = setInterval(pollSuperviseInput, 180); // responsive control
+    captureAndSend();
+  } else {
+    if (superviseTimer) { clearInterval(superviseTimer); superviseTimer = null; }
+    if (superviseInputTimer) { clearInterval(superviseInputTimer); superviseInputTimer = null; }
+    superviseGeom = null; lastInjectTarget = null;
+  }
 }
 
 app.whenReady().then(async () => {
@@ -1261,6 +1341,7 @@ ipcMain.handle('auth:logout', async () => {
     gateExit = false;
     stopAppBlocker();
     stopConfigPoll();
+    setSupervising(false);
     return r;
   } catch (e) { return { ok: false, error: 'network' }; }
 });

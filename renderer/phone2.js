@@ -20,7 +20,7 @@
   let wantTap = false;
   let nativeStarted = false;
 
-  const PHONE2_BUILD = '0.9.30';
+  const PHONE2_BUILD = '0.9.32';
   const diag = [];
   function logDiag(line) {
     const t = new Date().toTimeString().slice(0, 8);

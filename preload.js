@@ -46,6 +46,11 @@ contextBridge.exposeInMainWorld('portal', {
   phone2Config: () => { try { return ipcRenderer.sendSync('phone2:get'); } catch (_) { return null; } },
   onPhone2Config: (cb) => ipcRenderer.on('phone2:config', (_e, cfg) => cb(cfg)),
 
+  // Live supervision: fires true/false as an admin starts/stops watching this screen.
+  onSuperviseState: (cb) => ipcRenderer.on('supervise:state', (_e, on) => cb(!!on)),
+  // Report viewport size + active browser-tab geometry so injected clicks land right.
+  superviseGeom: (g) => ipcRenderer.send('supervise:geom', g),
+
   // Google Sheets assigned to this user (names + ids only; the URL stays in the
   // main process and is resolved just-in-time via sheetUrl()).
   sheetsList: () => { try { return ipcRenderer.sendSync('sheets:get') || []; } catch (_) { return []; } },
