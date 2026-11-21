@@ -1404,3 +1404,24 @@ html, body {
 #inbound-qbadge { background: #d93025; }
 #inbound-btn.oncall { background: #e6f4ea; border-color: #a8d5b5; color: #137333; }
 #inbound-btn.oncall .phone2-dot { background: #1e8e3e; box-shadow: 0 0 0 3px rgba(30,142,62,.2); animation: inbpulse 1.2s infinite; }
+
+/* ---- Inbound phone v3 polish: header reg, minimize, recents ---- */
+.inb-brand { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.inb-brand .inb-reg { margin-left: 2px; }
+.inb-head-actions { margin-left: auto; display: flex; gap: 4px; }
+.inb-ic { width: 25px; height: 25px; font-size: 13px; }
+.inb-ic.on { background: #ffd54a; color: #3a2d00; }
+.inb-panel.collapsed #inb-body { display: none; }
+.inb-panel.collapsed .inb-oncall { border-bottom: none; }
+
+.inb-recent-wrap { padding: 11px 13px; border-top: 1px solid var(--border); max-height: 230px; overflow: auto; }
+.inb-recent { display: flex; flex-direction: column; gap: 4px; }
+.inb-rec { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 9px; }
+.inb-rec:hover { background: #f6f8fa; }
+.inb-rec-ic { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 50%; background: #e6f4ea; color: #137333; font-size: 13px; }
+.inb-rec-main { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.inb-rec-num { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inb-rec-sub { font-size: 11px; color: var(--muted); }
+.inb-rec-copy { flex: none; border: none; background: transparent; cursor: pointer; color: var(--muted); font-size: 13px; padding: 3px 5px; border-radius: 6px; }
+.inb-rec-copy:hover { background: rgba(0,0,0,.07); color: var(--text); }
+.inb-rec-dur { flex: none; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; }

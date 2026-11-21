@@ -13,7 +13,7 @@
   const panel = $('inbound-panel');
   if (!btn || !panel) return;
 
-  const INBOUND_BUILD = '0.9.35';
+  const INBOUND_BUILD = '0.9.36';
   let cfg = null, viewTimer = null, logLines = [];
   let callTimer = null, callStart = 0;
   let muteOn = false, holdOn = false;
@@ -29,6 +29,36 @@
   }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
+  // ---- recent inbound calls (per-agent, kept locally) ----
+  function recentsKey() { return 'inbRecents:' + (cfg && cfg.ext ? cfg.ext : 'x'); }
+  function loadRecents() { try { return JSON.parse(localStorage.getItem(recentsKey()) || '[]'); } catch (_) { return []; } }
+  function saveRecents(a) { try { localStorage.setItem(recentsKey(), JSON.stringify(a.slice(0, 25))); } catch (_) {} }
+  function recordRecent(info, dur) {
+    const a = loadRecents();
+    a.unshift({ caller: info.caller || 'Unknown', via: info.via || '', t: Date.now(), dur: Math.max(0, Math.round(dur || 0)) });
+    saveRecents(a);
+    if ($('inb-recent') && !$('inb-recent').hidden) renderRecents();
+  }
+  function timeAgo(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+    return Math.floor(s / 86400) + 'd ago';
+  }
+  function fmtDur(d) { return d ? (Math.floor(d / 60) + ':' + String(d % 60).padStart(2, '0')) : '—'; }
+  function renderRecents() {
+    const el = $('inb-recent-list'); if (!el) return;
+    const a = loadRecents();
+    if (!a.length) { el.innerHTML = '<div class="inb-muted">No calls yet.</div>'; return; }
+    el.innerHTML = a.map((r) =>
+      '<div class="inb-rec"><span class="inb-rec-ic">↙</span>' +
+      '<span class="inb-rec-main"><span class="inb-rec-num">' + esc(r.caller) + '</span>' +
+      '<span class="inb-rec-sub">' + (r.via ? esc(r.via) + ' · ' : '') + timeAgo(r.t) + '</span></span>' +
+      '<button class="inb-rec-copy" data-num="' + esc(r.caller) + '" title="Copy">⧉</button>' +
+      '<span class="inb-rec-dur">' + fmtDur(r.dur) + '</span></div>').join('');
+  }
+
   // ---- config ----
   function applyConfig(c) {
     cfg = c && typeof c === 'object' ? c : null;
@@ -43,9 +73,19 @@
   try { applyConfig(P.inboundConfig()); } catch (_) {}
   if (P.onInboundConfig) P.onInboundConfig(applyConfig);
 
-  // ---- panel open/close (✕ and the pill never hang up a call) ----
+  // ---- panel open/close/minimize (never hangs up a call) ----
   btn.addEventListener('click', () => { panel.hidden = !panel.hidden; if (!panel.hidden) refreshView(); });
-  $('inb-min').addEventListener('click', () => { panel.hidden = true; });
+  $('inb-close').addEventListener('click', () => { panel.hidden = true; });
+  $('inb-collapse').addEventListener('click', () => {
+    const c = panel.classList.toggle('collapsed');
+    $('inb-collapse').textContent = c ? '▣' : '–';
+    $('inb-collapse').title = c ? 'Expand' : 'Minimize';
+  });
+  $('inb-recent-btn').addEventListener('click', () => {
+    const r = $('inb-recent'); const show = r.hidden;
+    r.hidden = !show; if (show) { renderRecents(); $('inb-logs').hidden = true; }
+    $('inb-recent-btn').classList.toggle('on', show);
+  });
 
   (function drag() {
     const head = $('inb-drag'); if (!head) return;
@@ -175,16 +215,23 @@
     log('transfer → user ' + b.dataset.uid); bridge('inboundTransfer', Number(b.dataset.uid)); $('inb-xfer-list').hidden = true;
   });
 
-  // ---- copy ----
+  // ---- copy (active call + recents) ----
   $('inb-call-copy').addEventListener('click', () => {
     const num = $('inb-call-num').textContent.trim();
     if (num && num !== '—') { try { navigator.clipboard.writeText(num); } catch (_) {} log('copied ' + num); }
   });
+  $('inb-recent-list').addEventListener('click', (e) => {
+    const b = e.target.closest('.inb-rec-copy'); if (!b) return;
+    try { navigator.clipboard.writeText(b.dataset.num); } catch (_) {}
+    b.textContent = '✓'; setTimeout(() => { b.textContent = '⧉'; }, 1200);
+  });
 
   // ---- logs ----
   $('inb-logs-btn').addEventListener('click', () => {
-    const l = $('inb-logs'); l.hidden = !l.hidden;
-    if (!l.hidden) $('inb-logs-pre').textContent = logLines.join('\n') || '—';
+    const l = $('inb-logs'); const show = l.hidden;
+    l.hidden = !show;
+    if (show) { $('inb-logs-pre').textContent = logLines.join('\n') || '—'; $('inb-recent').hidden = true; $('inb-recent-btn').classList.remove('on'); }
+    $('inb-logs-btn').classList.toggle('on', show);
   });
 
   // ---- native call events ----
@@ -200,13 +247,14 @@
       startCaptionTap();
       log('answered');
     } else if (ev.type === 'ended') {
+      if (onCall) recordRecent(onCall, (Date.now() - callStart) / 1000);
       try { window.InboundAudio && window.InboundAudio.setPcmTap(null); } catch (_) {}
       try { window.InboundAudio && window.InboundAudio.stop(); } catch (_) {}
       try { if (window.TopCaptions) window.TopCaptions.callEnded(); } catch (_) {}
       hideOnCall();
       log('call ended (' + (ev.reason || '') + ')');
     } else if (ev.type === 'registered') { log('registered to queue service ✓'); }
-    else if (ev.type === 'registerFailed') { log('REGISTER FAILED: ' + (ev.reason || '')); }
+    else if (ev.type === 'registerFailed') { log('REGISTER FAILED: ' + (ev.text || ev.reason || '')); }
     else if (ev.type === 'status') { log(ev.text || ''); }
     else if (ev.type === 'debug') { log('· ' + (ev.text || '')); }
   });
