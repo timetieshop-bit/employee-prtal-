@@ -46,6 +46,26 @@ contextBridge.exposeInMainWorld('portal', {
   phone2Config: () => { try { return ipcRenderer.sendSync('phone2:get'); } catch (_) { return null; } },
   onPhone2Config: (cb) => ipcRenderer.on('phone2:config', (_e, cfg) => cb(cfg)),
 
+  // Third phone — inbound ACD queue. Config + presence/queue polling API.
+  inboundConfig: () => { try { return ipcRenderer.sendSync('inbound:get'); } catch (_) { return null; } },
+  onInboundConfig: (cb) => ipcRenderer.on('inbound:config', (_e, cfg) => cb(cfg)),
+  acdView: () => ipcRenderer.invoke('acd:view'),
+  acdSet: (action, reason) => ipcRenderer.invoke('acd:set', action, reason),
+  acdLog: (msg, level) => ipcRenderer.invoke('acd:log', msg, level),
+
+  // Inbound phone native leg (registers to the queue service, handles the call).
+  inboundStart: (cfg) => ipcRenderer.invoke('inbound:start', cfg),
+  inboundAnswer: () => ipcRenderer.invoke('inbound:answer'),
+  inboundReject: () => ipcRenderer.invoke('inbound:reject'),
+  inboundHangup: () => ipcRenderer.invoke('inbound:hangup'),
+  inboundHold: (on) => ipcRenderer.invoke('inbound:hold', on),
+  inboundMute: (on) => ipcRenderer.invoke('inbound:mute', on),
+  inboundTransfer: (uid) => ipcRenderer.invoke('inbound:transfer', uid),
+  inboundStop: () => ipcRenderer.invoke('inbound:stop'),
+  onInboundEvent: (cb) => ipcRenderer.on('inbound:event', (_e, ev) => cb(ev)),
+  onInboundAudio: (cb) => ipcRenderer.on('inbound:audio', (_e, buf) => cb(buf)),
+  inboundMic: (u8) => ipcRenderer.send('inbound:mic', u8),
+
   // Live supervision: fires true/false as an admin starts/stops watching this screen.
   onSuperviseState: (cb) => ipcRenderer.on('supervise:state', (_e, on) => cb(!!on)),
   // Report viewport size + active browser-tab geometry so injected clicks land right.

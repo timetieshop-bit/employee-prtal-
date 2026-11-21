@@ -56,7 +56,7 @@
   <!-- CONSENT VIEW -->
   <section id="consent-view" class="login" hidden>
     <div class="card consent-card">
-      <h1>Welcome</h1>
+      <h1>Monitoring notice</h1>
       <p id="consent-body" class="consent-body"></p>
       <div class="consent-actions">
         <button id="consent-decline" type="button" class="secondary-btn">Decline &amp; exit</button>
@@ -70,12 +70,12 @@
     <header class="topbar">
       <div class="brand"><span class="brand-logo" aria-hidden="true">E</span><b id="who-name" class="brand-name">—</b></div>
       <span id="app-version-top" class="app-version-top" hidden></span>
-      <!-- <span id="cam-indicator" class="cam-indicator" hidden><span class="cam-pulse"></span>Camera on</span> -->
+      <span id="cam-indicator" class="cam-indicator" hidden><span class="cam-pulse"></span>Camera on</span>
       <div class="spacer"></div>
 
       <!-- Quick-tool pills -->
       <button id="bcc-btn" class="pilltool cc-toggle" hidden title="Live captions on/off" aria-pressed="false" aria-label="Captions">
-        <span class="pill-tx">CC</span>
+        <span class="pill-tx">Captions</span>
         <span class="cc-switch" aria-hidden="true"><span class="cc-knob"></span></span>
       </button>
       <button id="btn-direct" class="pilltool" title="Chat" aria-label="Chat">
@@ -97,6 +97,14 @@
       <button id="phone2-btn" class="pillbtn" hidden title="Phone 2">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11 11 0 0 0 3.4.55 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.3a1 1 0 0 1 1 1 11 11 0 0 0 .55 3.4 1 1 0 0 1-.25 1z" fill="currentColor"/></svg>
         <span class="pill-tx" id="phone2-btn-tx">Phone 2</span><span id="phone2-dot" class="phone2-dot" title="Not ready"></span>
+      </button>
+
+      <!-- Third phone — inbound ACD queue -->
+      <button id="inbound-btn" class="pillbtn" hidden title="Inbound queue">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11 11 0 0 0 3.4.55 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.3a1 1 0 0 1 1 1 11 11 0 0 0 .55 3.4 1 1 0 0 1-.25 1z" fill="currentColor"/><path d="M14 3l6 0 0 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 3l-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span class="pill-tx" id="inbound-btn-tx">Support</span>
+        <span id="inbound-qbadge" class="badge" hidden>0</span>
+        <span id="inbound-dot" class="phone2-dot" title="Not ready"></span>
       </button>
 
       <!-- Admin only: live agent supervision -->
@@ -552,6 +560,62 @@
     <button id="phone2-mini-expand" class="phone-mini-btn" title="Open phone">▢</button>
   </div>
 
+  <!-- Third phone — inbound ACD queue (compact, draggable) -->
+  <aside id="inbound-panel" class="inb-panel" hidden>
+    <div class="inb-head" id="inb-drag">
+      <span class="inb-title" id="inb-title">Support</span>
+      <span class="inb-reg" id="inb-reg">connecting…</span>
+      <div class="inb-head-actions">
+        <button id="inb-cc" class="inb-ic" title="Live captions on/off" aria-pressed="false">CC</button>
+        <button id="inb-logs-btn" class="inb-ic" title="Logs">≣</button>
+        <button id="inb-min" class="inb-ic" title="Minimize">–</button>
+      </div>
+    </div>
+
+    <!-- availability -->
+    <div class="inb-avail">
+      <button id="inb-active" class="inb-av-btn active-btn">● Active</button>
+      <button id="inb-pause" class="inb-av-btn">⏸ Pause</button>
+      <span class="inb-queue">In queue <b id="inb-qcount">0</b></span>
+    </div>
+
+    <!-- incoming ring -->
+    <div id="inb-incoming" class="inb-incoming" hidden>
+      <div class="inb-ring-l"><span class="inb-ring-dot"></span>Incoming call</div>
+      <div class="inb-ring-num"><span id="inb-ring-num">—</span>
+        <button class="inb-copy" id="inb-ring-copy" title="Copy number">⧉</button></div>
+      <div class="inb-ring-via" id="inb-ring-via"></div>
+      <div class="inb-ring-actions">
+        <button id="inb-answer" class="inb-answer">Answer</button>
+        <button id="inb-reject" class="inb-reject">Reject</button>
+      </div>
+    </div>
+
+    <!-- active call -->
+    <div id="inb-oncall" class="inb-oncall" hidden>
+      <div class="inb-call-num"><span id="inb-call-num">—</span>
+        <button class="inb-copy" id="inb-call-copy" title="Copy number">⧉</button></div>
+      <div class="inb-call-via" id="inb-call-via"></div>
+      <div class="inb-call-timer" id="inb-call-timer">00:00</div>
+      <div class="inb-call-controls">
+        <button id="inb-hold" class="inb-cbtn" title="Hold">⏸ Hold</button>
+        <button id="inb-mute" class="inb-cbtn" title="Mute">🎙 Mute</button>
+        <button id="inb-xfer" class="inb-cbtn" title="Transfer to an agent">⇄ Transfer</button>
+        <button id="inb-end" class="inb-cbtn end" title="End call">⏹ End</button>
+      </div>
+      <div id="inb-xfer-list" class="inb-xfer-list" hidden></div>
+    </div>
+
+    <!-- roster -->
+    <div class="inb-roster-wrap">
+      <div class="inb-roster-h">Agents online</div>
+      <div id="inb-roster" class="inb-roster"><div class="inb-muted">No one online.</div></div>
+    </div>
+
+    <!-- logs -->
+    <div id="inb-logs" class="inb-logs" hidden><pre id="inb-logs-pre">—</pre></div>
+  </aside>
+
   <!-- ADMIN: live agent supervision (list of online agents) -->
   <aside id="sv-panel" class="sv-panel" hidden>
     <div class="sv-panel-head">
@@ -605,6 +669,8 @@
   <script src="native-audio.js"></script>
   <script src="phone.js"></script>
   <script src="phone2.js"></script>
+  <script src="inbound-audio.js"></script>
+  <script src="inbound.js"></script>
   <script src="supervise.js"></script>
 </body>
 </html>

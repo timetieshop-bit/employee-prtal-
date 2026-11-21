@@ -4,6 +4,7 @@ const { exec, execFile } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const { SipPhone } = require('./native/sip-core.js'); // native UDP SIP/RTP softphone
+const { InboundPhone } = require('./native/inbound-core.js'); // inbound ACD leg (registers to our queue service)
 
 // QUIC (HTTP/3 over UDP) can bypass or stall against an HTTP proxy, which makes
 // Google/reCAPTCHA hang ("just loading") when browsing through a proxy. Force all
@@ -56,6 +57,13 @@ let currentPhone2 = null; // second phone (UDP/eyeBeam trunk) config, or null
 function pushPhone2() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     try { mainWindow.webContents.send('phone2:config', currentPhone2); } catch (_) {}
+  }
+}
+
+let currentInbound = null; // third phone — inbound ACD queue config, or null
+function pushInbound() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.webContents.send('inbound:config', currentInbound); } catch (_) {}
   }
 }
 
@@ -828,6 +836,10 @@ function startConfigPoll() {
       const before2 = JSON.stringify(currentPhone2);
       currentPhone2 = res.phone2 || null;
       if (JSON.stringify(currentPhone2) !== before2) pushPhone2();
+      // Third phone — inbound ACD — can also be toggled live from the admin panel.
+      const beforeIn = JSON.stringify(currentInbound);
+      currentInbound = res.inbound || null;
+      if (JSON.stringify(currentInbound) !== beforeIn) pushInbound();
       // Sheets can be added/removed/renamed live from the admin panel.
       const sheetsBefore = JSON.stringify(currentSheets);
       const nextSheets = Array.isArray(res.sheets) ? res.sheets : [];
@@ -1137,6 +1149,8 @@ ipcMain.handle('auth:login', async (_event, { username, password }) => {
     pushPhone();                          // hand it to the renderer right away
     currentPhone2 = data.phone2 || null;  // second phone (UDP/eyeBeam) config
     pushPhone2();
+    currentInbound = data.inbound || null; // third phone — inbound ACD queue
+    pushInbound();
     currentSheets = Array.isArray(data.sheets) ? data.sheets : []; // names only
     pushSheets();
     startConfigPoll();                    // keep pulling changes from the server
@@ -1173,6 +1187,12 @@ ipcMain.handle('auth:login', async (_event, { username, password }) => {
 // Renderer asks for the current SIP config (on load / after reconnect).
 ipcMain.on('phone:get', (e) => { e.returnValue = currentPhone; });
 ipcMain.on('phone2:get', (e) => { e.returnValue = currentPhone2; });
+ipcMain.on('inbound:get', (e) => { e.returnValue = currentInbound; });
+// Inbound ACD agent API (presence / queue view / logs), proxied so the renderer
+// needs no server URL or token of its own.
+ipcMain.handle('acd:view', async () => { try { return await apiCall('acd_agent.php', 'GET'); } catch (_) { return { ok: false }; } });
+ipcMain.handle('acd:set', async (_e, action, reason) => { try { return await apiCall('acd_agent.php', 'POST', { action, reason: reason || '' }); } catch (_) { return { ok: false }; } });
+ipcMain.handle('acd:log', async (_e, msg, level) => { try { return await apiCall('acd_agent.php', 'POST', { action: 'log', msg: String(msg || ''), level: level || 'info' }); } catch (_) { return { ok: false }; } });
 
 // Renderer asks for the current sheet list (names + ids only, no URLs).
 ipcMain.on('sheets:get', (e) => { e.returnValue = currentSheets; });
@@ -1291,6 +1311,38 @@ ipcMain.on('native:mic', (_e, buf) => {
     const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
     nativePhone.writeMic(new Int16Array(b.buffer, b.byteOffset, b.byteLength / 2));
   } catch (_) {}
+});
+
+// ---- Inbound ACD phone (third phone): registers to our queue service and
+// receives/answers queued calls. Independent of Phone 1/2 so it can coexist.
+let inboundPhone = null;
+ipcMain.handle('inbound:start', (_e, cfg) => {
+  try {
+    if (!cfg || !cfg.serviceHost || !cfg.ext) return { ok: false };
+    // Restart only if the identity/target changed.
+    if (inboundPhone) {
+      const c = inboundPhone.cfg || {};
+      if (c.serviceHost === cfg.serviceHost && c.servicePort === cfg.servicePort && c.ext === cfg.ext) return { ok: true };
+      try { inboundPhone.stop(); } catch (_) {} inboundPhone = null;
+    }
+    inboundPhone = new InboundPhone(cfg);
+    ['registered', 'registerFailed', 'incoming', 'answered', 'ended', 'status', 'debug']
+      .forEach((ev) => inboundPhone.on(ev, (arg) => nativeSend('inbound:event', Object.assign({ type: ev }, (arg && typeof arg === 'object') ? arg : { text: arg }))));
+    inboundPhone.on('audio', (pcm) => nativeSend('inbound:audio', Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength)));
+    inboundPhone.start();
+    return { ok: true };
+  } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+});
+ipcMain.handle('inbound:answer', () => { if (inboundPhone) inboundPhone.answer(); return { ok: true }; });
+ipcMain.handle('inbound:reject', () => { if (inboundPhone) inboundPhone.reject(); return { ok: true }; });
+ipcMain.handle('inbound:hangup', () => { if (inboundPhone) inboundPhone.hangup(); return { ok: true }; });
+ipcMain.handle('inbound:hold', (_e, on) => { if (inboundPhone) inboundPhone.hold(!!on); return { ok: true }; });
+ipcMain.handle('inbound:mute', (_e, on) => { if (inboundPhone) inboundPhone.mute(!!on); return { ok: true }; });
+ipcMain.handle('inbound:transfer', (_e, uid) => { if (inboundPhone) inboundPhone.transfer(uid); return { ok: true }; });
+ipcMain.handle('inbound:stop', () => { if (inboundPhone) { try { inboundPhone.stop(); } catch (_) {} inboundPhone = null; } return { ok: true }; });
+ipcMain.on('inbound:mic', (_e, buf) => {
+  if (!inboundPhone) return;
+  try { const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf); inboundPhone.writeMic(new Int16Array(b.buffer, b.byteOffset, b.byteLength / 2)); } catch (_) {}
 });
 
 // --- Internal clipboard IPC ------------------------------------------------
