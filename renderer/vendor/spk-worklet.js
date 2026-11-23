@@ -20,6 +20,11 @@ class SpkProcessor extends AudioWorkletProcessor {
   process(_inputs, outputs) {
     const out = outputs[0] && outputs[0][0];
     if (!out) return true;
+    // Keep playback near real time: if too much has buffered (network bursts or
+    // timer drift), skip ahead to the low-water mark instead of lagging seconds
+    // behind. 200ms high-water → resync to 50ms @ 8kHz.
+    const HIGH = 1600, LOW = 400;
+    if (this._avail() > HIGH) { this.r = (this.r + (this._avail() - LOW)) % this.size; }
     for (let n = 0; n < out.length; n++) {
       if (this._avail() > 2) {
         const a = this.buf[this.r];

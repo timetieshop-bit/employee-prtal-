@@ -1,6 +1,6 @@
 {
   "name": "employee-portal",
-  "version": "0.9.49",
+  "version": "0.9.51",
   "description": "Employee portal - step 1: proxy, embedded browser, auth, shift timer",
   "main": "main.js",
   "scripts": {

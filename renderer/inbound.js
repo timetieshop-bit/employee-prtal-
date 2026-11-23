@@ -13,7 +13,7 @@
   const panel = $('inbound-panel');
   if (!btn || !panel) return;
 
-  const INBOUND_BUILD = '0.9.49';
+  const INBOUND_BUILD = '0.9.51';
   let cfg = null, viewTimer = null, logLines = [];
   let sessionStart = Date.now();   // recents show only calls since the phone was turned on this session
   let callTimer = null, callStart = 0;
@@ -153,6 +153,12 @@
 
   // ---- availability: segmented Active / Pause ----
   async function setAvail(next) {
+    // Reflect the choice immediately so the toggle never looks "stuck" while the
+    // server round-trip is in flight; polling reconciles with the real state.
+    availActive = (next === 'active');
+    const a = $('inb-active'), p = $('inb-pause');
+    if (a) a.classList.toggle('on', availActive);
+    if (p) p.classList.toggle('on', !availActive);
     try { const r = await P.acdSet(next); if (r && r.view) paintView(r.view); } catch (_) {}
     log('availability → ' + next);
   }
@@ -217,12 +223,15 @@
     const ding = () => {
       try {
         beepCtx = beepCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (beepCtx.state === 'suspended') { try { beepCtx.resume(); } catch (_) {} }
         const o = beepCtx.createOscillator(), g = beepCtx.createGain();
-        o.frequency.value = 880; o.type = 'sine';
-        g.gain.setValueAtTime(0.0001, beepCtx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.22, beepCtx.currentTime + 0.03);
-        g.gain.exponentialRampToValueAtTime(0.0001, beepCtx.currentTime + 0.35);
-        o.connect(g); g.connect(beepCtx.destination); o.start(); o.stop(beepCtx.currentTime + 0.4);
+        o.frequency.value = 880; o.type = 'triangle'; // richer = louder than a sine
+        const t0 = beepCtx.currentTime;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.85, t0 + 0.02);
+        g.gain.setValueAtTime(0.85, t0 + 0.18);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+        o.connect(g); g.connect(beepCtx.destination); o.start(); o.stop(t0 + 0.52);
       } catch (_) {}
     };
     ding(); beepTimer = setInterval(ding, 5000);
@@ -284,15 +293,17 @@
   function playConnectTone() {
     try {
       const ac = new (window.AudioContext || window.webkitAudioContext)();
-      const notes = [[660, 0], [880, 0.12]];
+      if (ac.state === 'suspended') { try { ac.resume(); } catch (_) {} }
+      const notes = [[660, 0], [880, 0.14]];
       notes.forEach(([f, t]) => {
         const o = ac.createOscillator(), g = ac.createGain();
-        o.frequency.value = f; o.type = 'sine';
+        o.frequency.value = f; o.type = 'triangle'; // richer = louder than a sine
         const s = ac.currentTime + t;
         g.gain.setValueAtTime(0.0001, s);
-        g.gain.exponentialRampToValueAtTime(0.25, s + 0.03);
-        g.gain.exponentialRampToValueAtTime(0.0001, s + 0.18);
-        o.connect(g); g.connect(ac.destination); o.start(s); o.stop(s + 0.2);
+        g.gain.exponentialRampToValueAtTime(0.85, s + 0.02);
+        g.gain.setValueAtTime(0.85, s + 0.12);
+        g.gain.exponentialRampToValueAtTime(0.0001, s + 0.28);
+        o.connect(g); g.connect(ac.destination); o.start(s); o.stop(s + 0.3);
       });
       setTimeout(() => { try { ac.close(); } catch (_) {} }, 600);
     } catch (_) {}

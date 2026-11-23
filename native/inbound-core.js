@@ -50,13 +50,23 @@ class Rtp {
     this.sock.bind(p, () => { this.localPort = this.sock.address().port; cb && cb(); });
   }
   setRemote(ip, port, payload) { this.remoteIp = ip; this.remotePort = port; this.payload = payload === 8 ? 8 : 0; }
-  writePcm(pcm) { if (this.remoteIp) this.txQueue.push(pcm); }
+  writePcm(pcm) {
+    if (!this.remoteIp) return;
+    this.txQueue.push(pcm);
+    this._txSamples = (this._txSamples || 0) + pcm.length;
+    // Bound the mic→RTP backlog so the agent→customer delay can't accumulate over
+    // the call (the 20ms timer drifts slightly slower than real time). Over the
+    // high-water mark, drop oldest down to a small target so latency stays ~50ms.
+    const HIGH = 1600, LOW = 400; // 200ms → 50ms @ 8kHz
+    if (this._txSamples > HIGH) {
+      while (this._txSamples > LOW && this.txQueue.length > 1) this._txSamples -= this.txQueue.shift().length;
+    }
+  }
   startSending() {
-    if (this.txTimer) return; let carry = new Int16Array(0);
+    if (this.txTimer) return;
     this.txTimer = setInterval(() => {
       let frame = new Int16Array(160); let off = 0;
-      if (carry.length) { const n = Math.min(carry.length, 160); frame.set(carry.subarray(0, n), 0); off = n; carry = carry.subarray(n); }
-      while (off < 160 && this.txQueue.length) { const q = this.txQueue[0]; const n = Math.min(q.length, 160 - off); frame.set(q.subarray(0, n), off); off += n; if (n < q.length) this.txQueue[0] = q.subarray(n); else this.txQueue.shift(); }
+      while (off < 160 && this.txQueue.length) { const q = this.txQueue[0]; const n = Math.min(q.length, 160 - off); frame.set(q.subarray(0, n), off); off += n; if (n < q.length) this.txQueue[0] = q.subarray(n); else this.txQueue.shift(); this._txSamples = Math.max(0, (this._txSamples || 0) - n); }
       if (this.muted) frame = new Int16Array(160);
       this._send(frame);
     }, 20);
@@ -120,8 +130,8 @@ class InboundPhone extends EventEmitter {
   }
   _retryLater() {
     if (this._stopped || !this.sock || this._reregTimer) return;
-    this.emit('status', 'registration will retry in 15s…');
-    this._reregTimer = setTimeout(() => { this._reregTimer = null; if (!this._stopped && this.sock) this.register(); }, 15000);
+    this.emit('status', 'registration will retry in 5s…');
+    this._reregTimer = setTimeout(() => { this._reregTimer = null; if (!this._stopped && this.sock) this.register(); }, 5000);
   }
   // Send a tiny CRLF keepalive to the service every 25s so the router keeps this
   // phone's NAT pinhole open — otherwise inbound calls can't reach us between
@@ -191,7 +201,11 @@ class InboundPhone extends EventEmitter {
       if (!this.registered) { this.registered = true; this.emit('registered'); }
       let granted = 3600; const eh = (msg.headers['expires'] || '').trim();
       if (/^\d+$/.test(eh)) granted = parseInt(eh, 10); else { const m = /expires=(\d+)/i.exec(msg.headers['contact'] || ''); if (m) granted = parseInt(m[1], 10); }
-      const refreshMs = Math.max(10, Math.min(Math.floor(granted * 0.8), granted - 5)) * 1000;
+      // Re-register at HALF the granted lifetime so a single lost REGISTER still
+      // leaves a full extra interval to recover before the service expires us —
+      // this stops a live agent from briefly dropping off and having calls routed
+      // elsewhere.
+      const refreshMs = Math.max(8, Math.floor(granted * 0.5)) * 1000;
       if (this.regTimer) clearTimeout(this.regTimer);
       this.regTimer = setTimeout(() => this.register(), refreshMs);
       return;
