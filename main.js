@@ -1453,6 +1453,7 @@ ipcMain.handle('auth:logout', async () => {
     stopSupervisePoll();
     setSupervising(false);
     if (inboundPhone) { try { inboundPhone.stop(); } catch (_) {} inboundPhone = null; } // deregister inbound phone on logout
+    currentInbound = null; pushInbound(); // reset the phone UI (back to off) for the next login
     return r;
   } catch (e) { return { ok: false, error: 'network' }; }
 });

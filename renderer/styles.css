@@ -1432,3 +1432,26 @@ html, body {
 .inb-on-btn:hover { filter: brightness(1.05); }
 #inb-power { color: #9aa4b2; }
 .inb-panel:not(.off) #inb-power { background: #e6f4ea; color: #137333; }
+
+/* ---- Inbound phone v4: header fit, live dot, waving queue bubble ---- */
+.inb-panel { width: 322px; }
+.inb-head { flex-wrap: nowrap; gap: 7px; }
+.inb-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inb-reg { flex: none; }
+.inb-head-actions { flex: none; gap: 3px; }
+.inb-head-actions .inb-ic { width: 24px; height: 24px; font-size: 12px; }
+
+/* topbar pill: grey light by default; green only when phone is on + registered */
+#inbound-dot { background: #c0c6cd; }
+#inbound-btn.live #inbound-dot { background: #1e8e3e; box-shadow: 0 0 0 3px rgba(30,142,62,.18); }
+
+/* waving red queue bubble */
+.inb-qline { padding: 10px 0 14px; }
+.inb-qbubble { position: relative; width: 46px; height: 46px; margin: 2px auto 0; border-radius: 50%;
+  display: grid; place-items: center; font-weight: 800; font-size: 18px; color: #fff; background: #c6ccd4; transition: background .2s; }
+.inb-qbubble.has { background: #e53935; }
+.inb-qbubble.has::before, .inb-qbubble.has::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid #e53935; animation: qripple 1.8s ease-out infinite; }
+.inb-qbubble.has::after { animation-delay: .9s; }
+@keyframes qripple { 0% { transform: scale(1); opacity: .55; } 100% { transform: scale(2.2); opacity: 0; } }
+.inb-qlabel { text-align: center; font-size: 11px; color: var(--muted); margin-top: 9px; }

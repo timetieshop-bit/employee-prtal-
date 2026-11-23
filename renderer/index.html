@@ -588,7 +588,10 @@
       <button id="inb-active" class="inb-seg-btn">● Active</button>
       <button id="inb-pause" class="inb-seg-btn">Pause</button>
     </div>
-    <div class="inb-qline" id="inb-qline">In queue <b id="inb-qcount">0</b></div>
+    <div class="inb-qline" id="inb-qline">
+      <div class="inb-qbubble" id="inb-qbubble"><span id="inb-qcount">0</span></div>
+      <div class="inb-qlabel" id="inb-qlabel">no one waiting</div>
+    </div>
 
     <!-- active call (auto-answered while active) -->
     <div id="inb-oncall" class="inb-oncall" hidden>

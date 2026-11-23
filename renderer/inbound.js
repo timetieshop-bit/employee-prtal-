@@ -13,7 +13,7 @@
   const panel = $('inbound-panel');
   if (!btn || !panel) return;
 
-  const INBOUND_BUILD = '0.9.42';
+  const INBOUND_BUILD = '0.9.43';
   let cfg = null, viewTimer = null, logLines = [];
   let callTimer = null, callStart = 0;
   let muteOn = false, holdOn = false;
@@ -78,6 +78,7 @@
   // ---- power on / off ----
   function showOffState() {
     panel.classList.add('off');
+    btn.classList.remove('live', 'oncall');
     const reg = $('inb-reg'); if (reg) { reg.textContent = 'off'; reg.className = 'inb-reg'; }
   }
   function powerOn() {
@@ -169,10 +170,14 @@
       reg.textContent = label; reg.className = 'inb-reg ' + (registered ? (st === 'incall' ? 'incall' : (availActive ? 'active' : 'paused')) : 'offline');
     }
     const dot = $('inbound-dot'); if (dot) dot.title = registered ? 'Registered' : 'Not registered';
+    // Topbar green light only when the phone is on AND registered.
+    btn.classList.toggle('live', powered && registered);
 
-    // queue count + badge (red/urgent while on a call, per the alert rules)
+    // queue count + waving red bubble
     const qc = (v.queue && v.queue.count) || 0;
     $('inb-qcount').textContent = qc;
+    const bubble = $('inb-qbubble'); if (bubble) bubble.classList.toggle('has', qc > 0);
+    const qlabel = $('inb-qlabel'); if (qlabel) qlabel.textContent = qc > 0 ? (qc === 1 ? 'call waiting' : 'calls waiting') : 'no one waiting';
     const badge = $('inbound-qbadge');
     if (badge) {
       if (qc > 0) { badge.textContent = qc; badge.hidden = false; badge.classList.toggle('urgent', st === 'incall'); }
