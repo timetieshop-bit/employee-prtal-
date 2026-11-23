@@ -1359,6 +1359,17 @@ html, body {
 .inb-ic { width: 25px; height: 25px; border: none; border-radius: 8px; background: #f1f3f6; color: #55606e; cursor: pointer; font-size: 13px; line-height: 1; }
 .inb-ic:hover { background: #e6e9ef; }
 .inb-ic.on { background: #e6f4ea; color: #137333; }
+/* Power on/off toggle switch in the top bar */
+.inb-switch { position: relative; flex: none; width: 46px; height: 22px; padding: 0; border: none; border-radius: 999px; background: #c9ced6; cursor: pointer; transition: background .18s ease; }
+.inb-switch:hover { filter: brightness(0.98); }
+.inb-switch.on { background: #20c15b; }
+.inb-switch-knob { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.28); transition: left .18s ease; }
+.inb-switch.on .inb-switch-knob { left: 26px; }
+.inb-switch-txt { position: absolute; top: 0; height: 22px; display: flex; align-items: center; font-size: 8px; font-weight: 800; letter-spacing: .6px; color: #fff; right: 5px; }
+.inb-switch.on .inb-switch-txt { left: 6px; right: auto; }
+/* Transient toast inside the phone (e.g. "Customer hung up") */
+.inb-toast { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%) translateY(8px); background: #202b3a; color: #fff; font-size: 12px; font-weight: 600; padding: 8px 14px; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.25); opacity: 0; transition: opacity .2s ease, transform .2s ease; pointer-events: none; z-index: 5; white-space: nowrap; }
+.inb-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 /* segmented Active / Pause */
 .inb-seg { display: flex; margin: 13px 14px 0; background: #f1f3f6; border-radius: 11px; padding: 4px; }
@@ -1404,6 +1415,7 @@ html, body {
 .inb-pill.active { background: #e6f4ea; color: #137333; } .inb-pill.paused { background: #fef7e0; color: #9a6a00; }
 .inb-pill.incall { background: #e8f0fe; color: #1a73e8; } .inb-pill.offline { background: #f1f3f4; color: var(--muted); }
 .inb-muted { color: var(--muted); font-size: 12px; }
+.inb-recent { max-height: 184px; overflow-y: auto; }
 .inb-rec { display: flex; align-items: center; gap: 9px; padding: 7px 0; }
 .inb-rec-ic { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 50%; background: #e6f4ea; color: #137333; font-size: 13px; }
 .inb-rec-main { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }

@@ -567,9 +567,8 @@
       <span class="inb-title" id="inb-title">Support</span>
       <span class="inb-reg" id="inb-reg">connecting…</span>
       <div class="inb-head-actions">
-        <button id="inb-power" class="inb-ic" title="Turn phone on/off">⏻</button>
+        <button id="inb-power" class="inb-switch" title="Turn phone on/off" aria-label="Phone power"><span class="inb-switch-txt">OFF</span><span class="inb-switch-knob"></span></button>
         <button id="inb-recent-btn" class="inb-ic" title="Recent calls">🕑</button>
-        <button id="inb-logs-btn" class="inb-ic" title="Logs">≣</button>
         <button id="inb-collapse" class="inb-ic" title="Minimize">–</button>
         <button id="inb-close" class="inb-ic" title="Close (your call keeps running)">✕</button>
       </div>
@@ -617,15 +616,13 @@
         <div id="inb-roster" class="inb-roster"><div class="inb-muted">No one online.</div></div>
       </div>
 
-      <!-- recent inbound calls -->
+      <!-- recent inbound calls (this session only) -->
       <div id="inb-recent" class="inb-recent-wrap" hidden>
-        <div class="inb-roster-h">Recent calls</div>
+        <div class="inb-roster-h">Recent calls (this session)</div>
         <div id="inb-recent-list" class="inb-recent"><div class="inb-muted">No calls yet.</div></div>
       </div>
-
-      <!-- logs -->
-      <div id="inb-logs" class="inb-logs" hidden><pre id="inb-logs-pre">—</pre></div>
     </div>
+    <div id="inb-toast" class="inb-toast" hidden></div>
   </aside>
 
   <!-- ADMIN: live agent supervision (list of online agents) -->

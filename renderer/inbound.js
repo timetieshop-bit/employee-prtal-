@@ -13,8 +13,9 @@
   const panel = $('inbound-panel');
   if (!btn || !panel) return;
 
-  const INBOUND_BUILD = '0.9.43';
+  const INBOUND_BUILD = '0.9.49';
   let cfg = null, viewTimer = null, logLines = [];
+  let sessionStart = Date.now();   // recents show only calls since the phone was turned on this session
   let callTimer = null, callStart = 0;
   let muteOn = false, holdOn = false;
   let availActive = false;      // our chosen availability
@@ -51,7 +52,7 @@
   function fmtDur(d) { return d ? (Math.floor(d / 60) + ':' + String(d % 60).padStart(2, '0')) : '—'; }
   function renderRecents() {
     const el = $('inb-recent-list'); if (!el) return;
-    const a = loadRecents();
+    const a = loadRecents().filter((r) => (r.t || 0) >= sessionStart); // this session only
     if (!a.length) { el.innerHTML = '<div class="inb-muted">No calls yet.</div>'; return; }
     el.innerHTML = a.map((r) =>
       '<div class="inb-rec"><span class="inb-rec-ic">↙</span>' +
@@ -76,15 +77,23 @@
   if (P.onInboundConfig) P.onInboundConfig(applyConfig);
 
   // ---- power on / off ----
+  function reflectPower() {
+    const sw = $('inb-power'); if (!sw) return;
+    sw.classList.toggle('on', powered);
+    const t = sw.querySelector('.inb-switch-txt'); if (t) t.textContent = powered ? 'ON' : 'OFF';
+  }
   function showOffState() {
     panel.classList.add('off');
     btn.classList.remove('live', 'oncall');
     const reg = $('inb-reg'); if (reg) { reg.textContent = 'off'; reg.className = 'inb-reg'; }
+    reflectPower();
   }
   function powerOn() {
     if (!cfg || powered) return;
     powered = true;
+    sessionStart = Date.now();   // fresh "recent calls (this session)" from now
     panel.classList.remove('off');
+    reflectPower();
     log('phone turned ON');
     try { P.inboundStart && P.inboundStart(cfg); } catch (_) {}
     startPolling();
@@ -98,6 +107,7 @@
     try { P.inboundStop && P.inboundStop(); } catch (_) {}
     stopPolling(); stopQueueBeep();
     showOffState();
+    reflectPower();
     const badge = $('inbound-qbadge'); if (badge) badge.hidden = true;
     setPillOnCall(false);
     log('phone turned OFF');
@@ -118,7 +128,7 @@
   });
   $('inb-recent-btn').addEventListener('click', () => {
     const r = $('inb-recent'); const show = r.hidden;
-    r.hidden = !show; if (show) { renderRecents(); $('inb-logs').hidden = true; }
+    r.hidden = !show; if (show) renderRecents();
     $('inb-recent-btn').classList.toggle('on', show);
   });
 
@@ -329,13 +339,15 @@
     b.textContent = '✓'; setTimeout(() => { b.textContent = '⧉'; }, 1200);
   });
 
-  // ---- logs ----
-  $('inb-logs-btn').addEventListener('click', () => {
-    const l = $('inb-logs'); const show = l.hidden;
-    l.hidden = !show;
-    if (show) { $('inb-logs-pre').textContent = logLines.join('\n') || '—'; $('inb-recent').hidden = true; $('inb-recent-btn').classList.remove('on'); }
-    $('inb-logs-btn').classList.toggle('on', show);
-  });
+  // ---- transient toast inside the phone ----
+  let toastTimer = null;
+  function toast(text) {
+    const el = $('inb-toast'); if (!el) return;
+    el.textContent = text; el.hidden = false;
+    requestAnimationFrame(() => el.classList.add('show'));
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.classList.remove('show'); setTimeout(() => { el.hidden = true; }, 220); }, 3200);
+  }
 
   // ---- native call events ----
   if (P.onInboundEvent) P.onInboundEvent((ev) => {
@@ -351,7 +363,8 @@
       startCaptionTap();
       log('answered');
     } else if (ev.type === 'ended') {
-      endCallLocal(ev.reason || 'ended');
+      if (ev.reason === 'customer-hangup') toast('Customer hung up the call');
+      endCallLocal(ev.reason === 'customer-hangup' ? 'customer hung up' : (ev.reason || 'ended'));
     } else if (ev.type === 'registered') { log('registered to queue service ✓'); }
     else if (ev.type === 'registerFailed') { log('REGISTER FAILED: ' + (ev.text || ev.reason || '')); }
     else if (ev.type === 'status') { log(ev.text || ''); }

@@ -297,7 +297,11 @@ class InboundPhone extends EventEmitter {
     if (method === 'OPTIONS') { this._respond(msg, rinfo, 200, 'OK'); return; }
     if (method === 'BYE') {
       this._respond(msg, rinfo, 200, 'OK');
-      if (this.call && this.call.callId === msg.headers['call-id']) this._endLocal('remote hangup');
+      if (this.call && this.call.callId === msg.headers['call-id']) {
+        // The service tells us who ended it via X-Ended-By so the UI can say so.
+        const by = (msg.headers['x-ended-by'] || '').trim();
+        this._endLocal(by === 'customer' ? 'customer-hangup' : 'remote hangup');
+      }
       return;
     }
     if (method === 'CANCEL') {
