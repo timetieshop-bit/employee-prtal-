@@ -1344,6 +1344,9 @@ ipcMain.on('inbound:mic', (_e, buf) => {
   if (!inboundPhone) return;
   try { const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf); inboundPhone.writeMic(new Int16Array(b.buffer, b.byteOffset, b.byteLength / 2)); } catch (_) {}
 });
+// Copy to the OS clipboard from the main process (the renderer's navigator.clipboard
+// is blocked by the portal's clipboard-isolation lock).
+ipcMain.handle('ui:copy', (_e, text) => { try { clipboard.writeText(String(text == null ? '' : text)); return { ok: true }; } catch (_) { return { ok: false }; } });
 
 // --- Internal clipboard IPC ------------------------------------------------
 // Renderer + webview preloads use these (sendSync for reads) to implement an

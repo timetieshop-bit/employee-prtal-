@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('portal', {
   inboundTransfer: (uid) => ipcRenderer.invoke('inbound:transfer', uid),
   inboundStop: () => ipcRenderer.invoke('inbound:stop'),
   onInboundEvent: (cb) => ipcRenderer.on('inbound:event', (_e, ev) => cb(ev)),
+  copyText: (text) => ipcRenderer.invoke('ui:copy', text),
   onInboundAudio: (cb) => ipcRenderer.on('inbound:audio', (_e, buf) => cb(buf)),
   inboundMic: (u8) => ipcRenderer.send('inbound:mic', u8),
 

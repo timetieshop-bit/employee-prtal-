@@ -13,12 +13,13 @@
   const panel = $('inbound-panel');
   if (!btn || !panel) return;
 
-  const INBOUND_BUILD = '0.9.38';
+  const INBOUND_BUILD = '0.9.40';
   let cfg = null, viewTimer = null, logLines = [];
   let callTimer = null, callStart = 0;
   let muteOn = false, holdOn = false;
   let availActive = false;      // our chosen availability
   let onCall = null;            // { caller, via } while connected
+  let endedAt = 0;              // when the last call ended (guards re-show)
   let lastRoster = [];
 
   function log(line) {
@@ -66,6 +67,7 @@
     btn.hidden = false;
     const tx = $('inbound-btn-tx'); if (tx) tx.textContent = cfg.label || 'Support';
     const title = $('inb-title'); if (title) title.textContent = cfg.label || 'Support';
+    const logo = $('inb-logo'); if (logo) logo.textContent = (cfg.label || 'S').trim().charAt(0).toUpperCase();
     log('Inbound ' + INBOUND_BUILD + ' configured (ext ' + (cfg.ext || '?') + ' → ' + (cfg.serviceHost || '?') + ':' + (cfg.servicePort || '?') + ')');
     startPolling();
     try { P.inboundStart && P.inboundStart(cfg); } catch (_) {}
@@ -106,12 +108,13 @@
     window.addEventListener('mouseup', () => { dragging = false; });
   })();
 
-  // ---- single availability toggle ----
-  $('inb-toggle').addEventListener('click', async () => {
-    const next = availActive ? 'pause' : 'active';
+  // ---- availability: segmented Active / Pause ----
+  async function setAvail(next) {
     try { const r = await P.acdSet(next); if (r && r.view) paintView(r.view); } catch (_) {}
     log('availability → ' + next);
-  });
+  }
+  $('inb-active').addEventListener('click', () => setAvail('active'));
+  $('inb-pause').addEventListener('click', () => setAvail('pause'));
 
   // ---- polling ----
   function startPolling() { stopPolling(); refreshView(); viewTimer = setInterval(refreshView, 2500); }
@@ -123,11 +126,9 @@
     availActive = (st === 'active' || st === 'incall');
     const registered = !!(v.me && v.me.registered);
 
-    // toggle look
-    const tg = $('inb-toggle'), tx = $('inb-toggle-tx');
-    tg.dataset.on = availActive ? '1' : '0';
-    tg.classList.toggle('on', availActive);
-    tx.textContent = availActive ? 'Active — taking calls' : 'Paused';
+    // segmented control look
+    $('inb-active').classList.toggle('on', availActive);
+    $('inb-pause').classList.toggle('on', !availActive);
 
     // status pill
     const reg = $('inb-reg');
@@ -137,18 +138,49 @@
     }
     const dot = $('inbound-dot'); if (dot) dot.title = registered ? 'Registered' : 'Not registered';
 
-    // queue count + badge
+    // queue count + badge (red/urgent while on a call, per the alert rules)
     const qc = (v.queue && v.queue.count) || 0;
     $('inb-qcount').textContent = qc;
     const badge = $('inbound-qbadge');
-    if (badge) { if (qc > 0 && !onCall) { badge.textContent = qc; badge.hidden = false; } else badge.hidden = true; }
+    if (badge) {
+      if (qc > 0) { badge.textContent = qc; badge.hidden = false; badge.classList.toggle('urgent', st === 'incall'); }
+      else { badge.hidden = true; badge.classList.remove('urgent'); }
+    }
+    // Alert rules: paused + waiting → beep; in-call + waiting → red count only;
+    // active + idle → the call auto-connects, no alert.
+    if (qc > 0 && st === 'paused') startQueueBeep(); else stopQueueBeep();
+    const ocw = $('inb-oc-wait');
+    if (ocw) { if (onCall && qc > 0) { ocw.textContent = qc + ' waiting in queue'; ocw.hidden = false; } else ocw.hidden = true; }
 
     lastRoster = v.roster || [];
     paintRoster(lastRoster);
 
-    // reflect a server-known call if the native layer hasn't surfaced it
-    if (!onCall && v.call && v.call.state === 'connected') showOnCall({ caller: v.call.caller, via: v.call.name || v.call.did }, v.call.dur || 0);
+    // Follow the server's call state so a hang-up the phone missed still clears
+    // it, and a connected call the phone missed still shows — with a short guard
+    // so it can't immediately re-appear right after we end one.
+    const serverConnected = !!(v.call && v.call.state === 'connected');
+    if (onCall && !serverConnected && (Date.now() - callStart > 4000)) endCallLocal('remote hang-up');
+    else if (!onCall && serverConnected && (Date.now() - endedAt > 5000)) showOnCall({ caller: v.call.caller, via: v.call.name || v.call.did }, v.call.dur || 0);
   }
+
+  // ---- queue beep (paused + calls waiting) ----
+  let beepCtx = null, beepTimer = null;
+  function startQueueBeep() {
+    if (beepTimer) return;
+    const ding = () => {
+      try {
+        beepCtx = beepCtx || new (window.AudioContext || window.webkitAudioContext)();
+        const o = beepCtx.createOscillator(), g = beepCtx.createGain();
+        o.frequency.value = 880; o.type = 'sine';
+        g.gain.setValueAtTime(0.0001, beepCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.22, beepCtx.currentTime + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, beepCtx.currentTime + 0.35);
+        o.connect(g); g.connect(beepCtx.destination); o.start(); o.stop(beepCtx.currentTime + 0.4);
+      } catch (_) {}
+    };
+    ding(); beepTimer = setInterval(ding, 5000);
+  }
+  function stopQueueBeep() { if (beepTimer) { clearInterval(beepTimer); beepTimer = null; } }
 
   function paintRoster(roster) {
     const wrap = $('inb-roster'); if (!wrap) return;
@@ -166,19 +198,31 @@
   function showOnCall(info, startSecs) {
     onCall = info;
     $('inb-call-num').textContent = info.caller || 'Unknown';
-    $('inb-call-via').textContent = info.via ? ('on ' + info.via) : 'inbound call';
+    $('inb-call-via').textContent = info.via ? (' · on ' + info.via) : '';
     $('inb-oncall').hidden = false;
+    panel.classList.add('oncall'); // hides the segmented control + body (CSS)
     panel.hidden = false;
     callStart = Date.now() - (startSecs || 0) * 1000;
     startCallTimer();
     setPillOnCall(true);
-    const b = $('inbound-qbadge'); if (b) b.hidden = true;
   }
   function hideOnCall() {
-    onCall = null; stopCallTimer();
+    onCall = null; stopCallTimer(); endedAt = Date.now();
     $('inb-oncall').hidden = true; $('inb-xfer-list').hidden = true;
+    panel.classList.remove('oncall');
     holdOn = muteOn = false; paintToggles();
     setPillOnCall(false);
+  }
+  // Fully end the call on the phone side (recent entry, audio, captions, UI).
+  // Safe to call more than once; subsequent calls no-op.
+  function endCallLocal(reason) {
+    if (!onCall && $('inb-oncall').hidden) return;
+    if (onCall) recordRecent(onCall, (Date.now() - callStart) / 1000);
+    try { window.InboundAudio && window.InboundAudio.setPcmTap(null); } catch (_) {}
+    try { window.InboundAudio && window.InboundAudio.stop(); } catch (_) {}
+    try { if (window.TopCaptions) window.TopCaptions.callEnded(); } catch (_) {}
+    hideOnCall();
+    log('call ended (' + (reason || '') + ')');
   }
   function startCallTimer() {
     stopCallTimer();
@@ -191,7 +235,7 @@
 
   // ---- call controls ----
   function bridge(name, ...a) { try { if (P[name]) return P[name](...a); } catch (_) {} log('(' + name + ' unavailable)'); }
-  $('inb-end').addEventListener('click', () => { log('end'); bridge('inboundHangup'); });
+  $('inb-end').addEventListener('click', () => { log('end'); bridge('inboundHangup'); endCallLocal('hangup'); });
   $('inb-hold').addEventListener('click', () => { holdOn = !holdOn; bridge('inboundHold', holdOn); paintToggles(); log('hold ' + holdOn); });
   $('inb-mute').addEventListener('click', () => { muteOn = !muteOn; bridge('inboundMute', muteOn); paintToggles(); log('mute ' + muteOn); });
   function paintToggles() {
@@ -216,13 +260,17 @@
   });
 
   // ---- copy (active call + recents) ----
+  function doCopy(text) {
+    if (!text) return;
+    if (P.copyText) P.copyText(text); else { try { navigator.clipboard.writeText(text); } catch (_) {} }
+  }
   $('inb-call-copy').addEventListener('click', () => {
     const num = $('inb-call-num').textContent.trim();
-    if (num && num !== '—') { try { navigator.clipboard.writeText(num); } catch (_) {} log('copied ' + num); }
+    if (num && num !== '—') { doCopy(num); log('copied ' + num); }
   });
   $('inb-recent-list').addEventListener('click', (e) => {
     const b = e.target.closest('.inb-rec-copy'); if (!b) return;
-    try { navigator.clipboard.writeText(b.dataset.num); } catch (_) {}
+    doCopy(b.dataset.num);
     b.textContent = '✓'; setTimeout(() => { b.textContent = '⧉'; }, 1200);
   });
 
@@ -247,12 +295,7 @@
       startCaptionTap();
       log('answered');
     } else if (ev.type === 'ended') {
-      if (onCall) recordRecent(onCall, (Date.now() - callStart) / 1000);
-      try { window.InboundAudio && window.InboundAudio.setPcmTap(null); } catch (_) {}
-      try { window.InboundAudio && window.InboundAudio.stop(); } catch (_) {}
-      try { if (window.TopCaptions) window.TopCaptions.callEnded(); } catch (_) {}
-      hideOnCall();
-      log('call ended (' + (ev.reason || '') + ')');
+      endCallLocal(ev.reason || 'ended');
     } else if (ev.type === 'registered') { log('registered to queue service ✓'); }
     else if (ev.type === 'registerFailed') { log('REGISTER FAILED: ' + (ev.text || ev.reason || '')); }
     else if (ev.type === 'status') { log(ev.text || ''); }
