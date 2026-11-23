@@ -91,11 +91,14 @@ class InboundPhone extends EventEmitter {
     this.registered = false; this.regCseq = 1; this.regTimer = null; this.regAuthTries = 0;
     this.callId = rnd(8) + '@' + this.localIp;
     this.fromTag = rnd(6);
-    this._reregTimer = null;
+    this._reregTimer = null; this._kaTimer = null;
     // Keep trying to register until it succeeds (recovers after the service
     // restarts, the firewall opens, or a packet is lost) instead of giving up.
     this.on('registerFailed', () => this._retryLater());
-    this.on('registered', () => { if (this._reregTimer) { clearTimeout(this._reregTimer); this._reregTimer = null; } });
+    this.on('registered', () => {
+      if (this._reregTimer) { clearTimeout(this._reregTimer); this._reregTimer = null; }
+      this._startKeepalive();
+    });
     this.call = null; // active/ringing call dialog
   }
   _dbg(t) { this.emit('debug', t); }
@@ -108,6 +111,7 @@ class InboundPhone extends EventEmitter {
   stop() {
     if (this.regTimer) clearTimeout(this.regTimer);
     if (this._reregTimer) { clearTimeout(this._reregTimer); this._reregTimer = null; }
+    if (this._kaTimer) { clearInterval(this._kaTimer); this._kaTimer = null; }
     this._stopped = true;
     try { this.register(0); } catch (_) {}
     if (this.call) { try { this.hangup(); } catch (_) {} }
@@ -118,6 +122,15 @@ class InboundPhone extends EventEmitter {
     if (this._stopped || !this.sock || this._reregTimer) return;
     this.emit('status', 'registration will retry in 15s…');
     this._reregTimer = setTimeout(() => { this._reregTimer = null; if (!this._stopped && this.sock) this.register(); }, 15000);
+  }
+  // Send a tiny CRLF keepalive to the service every 25s so the router keeps this
+  // phone's NAT pinhole open — otherwise inbound calls can't reach us between
+  // the (infrequent) SIP re-registrations.
+  _startKeepalive() {
+    if (this._kaTimer || this._stopped) return;
+    this._kaTimer = setInterval(() => {
+      try { this.sock && this.sock.send(Buffer.from('\r\n\r\n'), this.cfg.servicePort, this.cfg.serviceHost); } catch (_) {}
+    }, 25000);
   }
   _send(msg) { try { this.sock.send(Buffer.from(msg), this.cfg.servicePort, this.cfg.serviceHost); } catch (_) {} }
   _via(branch) { return `Via: SIP/2.0/UDP ${this.localIp}:${this.localPort};branch=z9hG4bK${branch};rport`; }

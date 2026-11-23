@@ -13,7 +13,7 @@
   const panel = $('inbound-panel');
   if (!btn || !panel) return;
 
-  const INBOUND_BUILD = '0.9.37';
+  const INBOUND_BUILD = '0.9.38';
   let cfg = null, viewTimer = null, logLines = [];
   let callTimer = null, callStart = 0;
   let muteOn = false, holdOn = false;
