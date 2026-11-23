@@ -13,11 +13,12 @@
   const panel = $('inbound-panel');
   if (!btn || !panel) return;
 
-  const INBOUND_BUILD = '0.9.40';
+  const INBOUND_BUILD = '0.9.42';
   let cfg = null, viewTimer = null, logLines = [];
   let callTimer = null, callStart = 0;
   let muteOn = false, holdOn = false;
   let availActive = false;      // our chosen availability
+  let powered = false;          // phone off until the agent turns it on
   let onCall = null;            // { caller, via } while connected
   let endedAt = 0;              // when the last call ended (guards re-show)
   let lastRoster = [];
@@ -60,20 +61,51 @@
       '<span class="inb-rec-dur">' + fmtDur(r.dur) + '</span></div>').join('');
   }
 
-  // ---- config ----
+  // ---- config ---- (the phone starts OFF; the agent turns it on to take calls)
   function applyConfig(c) {
     cfg = c && typeof c === 'object' ? c : null;
-    if (!cfg) { btn.hidden = true; panel.hidden = true; stopPolling(); return; }
+    if (!cfg) { btn.hidden = true; panel.hidden = true; powerOff(); stopPolling(); return; }
     btn.hidden = false;
-    const tx = $('inbound-btn-tx'); if (tx) tx.textContent = cfg.label || 'Support';
+    const tx = $('inbound-btn-tx'); if (tx && !onCall) tx.textContent = cfg.label || 'Support';
     const title = $('inb-title'); if (title) title.textContent = cfg.label || 'Support';
     const logo = $('inb-logo'); if (logo) logo.textContent = (cfg.label || 'S').trim().charAt(0).toUpperCase();
     log('Inbound ' + INBOUND_BUILD + ' configured (ext ' + (cfg.ext || '?') + ' → ' + (cfg.serviceHost || '?') + ':' + (cfg.servicePort || '?') + ')');
-    startPolling();
-    try { P.inboundStart && P.inboundStart(cfg); } catch (_) {}
+    if (!powered) showOffState(); // default: off until the agent turns it on
   }
   try { applyConfig(P.inboundConfig()); } catch (_) {}
   if (P.onInboundConfig) P.onInboundConfig(applyConfig);
+
+  // ---- power on / off ----
+  function showOffState() {
+    panel.classList.add('off');
+    const reg = $('inb-reg'); if (reg) { reg.textContent = 'off'; reg.className = 'inb-reg'; }
+  }
+  function powerOn() {
+    if (!cfg || powered) return;
+    powered = true;
+    panel.classList.remove('off');
+    log('phone turned ON');
+    try { P.inboundStart && P.inboundStart(cfg); } catch (_) {}
+    startPolling();
+    setAvail('active'); // turning on means ready to take calls
+  }
+  function powerOff() {
+    if (!powered) { showOffState(); return; }
+    powered = false;
+    if (onCall) { bridge('inboundHangup'); endCallLocal('phone off'); }
+    try { P.acdSet && P.acdSet('pause'); } catch (_) {}
+    try { P.inboundStop && P.inboundStop(); } catch (_) {}
+    stopPolling(); stopQueueBeep();
+    showOffState();
+    const badge = $('inbound-qbadge'); if (badge) badge.hidden = true;
+    setPillOnCall(false);
+    log('phone turned OFF');
+  }
+  $('inb-on-btn').addEventListener('click', powerOn);
+  $('inb-power').addEventListener('click', () => { powered ? powerOff() : powerOn(); });
+  // Turn the phone off when the agent logs out / the portal exits.
+  if (P.onLogout) P.onLogout(() => powerOff());
+  window.addEventListener('beforeunload', () => { try { if (powered) P.inboundStop && P.inboundStop(); } catch (_) {} });
 
   // ---- panel open/close/minimize (never hangs up a call) ----
   btn.addEventListener('click', () => { panel.hidden = !panel.hidden; if (!panel.hidden) refreshView(); });
@@ -233,6 +265,24 @@
   }
   function stopCallTimer() { if (callTimer) { clearInterval(callTimer); callTimer = null; } }
 
+  // Soft two-note "connected" chime so the agent notices an auto-answered call.
+  function playConnectTone() {
+    try {
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      const notes = [[660, 0], [880, 0.12]];
+      notes.forEach(([f, t]) => {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.frequency.value = f; o.type = 'sine';
+        const s = ac.currentTime + t;
+        g.gain.setValueAtTime(0.0001, s);
+        g.gain.exponentialRampToValueAtTime(0.25, s + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, s + 0.18);
+        o.connect(g); g.connect(ac.destination); o.start(s); o.stop(s + 0.2);
+      });
+      setTimeout(() => { try { ac.close(); } catch (_) {} }, 600);
+    } catch (_) {}
+  }
+
   // ---- call controls ----
   function bridge(name, ...a) { try { if (P[name]) return P[name](...a); } catch (_) {} log('(' + name + ' unavailable)'); }
   $('inb-end').addEventListener('click', () => { log('end'); bridge('inboundHangup'); endCallLocal('hangup'); });
@@ -290,6 +340,7 @@
       try { P.inboundAnswer && P.inboundAnswer(); } catch (_) {} // auto-answer while active
     } else if (ev.type === 'answered') {
       showOnCall({ caller: ev.caller, via: ev.via }, 0);
+      playConnectTone(); // notify the agent a call just auto-connected
       try { window.InboundAudio && window.InboundAudio.start(); } catch (_) {}
       try { if (window.TopCaptions) window.TopCaptions.callStarted(8000); } catch (_) {}
       startCaptionTap();

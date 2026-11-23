@@ -567,11 +567,20 @@
       <span class="inb-title" id="inb-title">Support</span>
       <span class="inb-reg" id="inb-reg">connecting…</span>
       <div class="inb-head-actions">
+        <button id="inb-power" class="inb-ic" title="Turn phone on/off">⏻</button>
         <button id="inb-recent-btn" class="inb-ic" title="Recent calls">🕑</button>
         <button id="inb-logs-btn" class="inb-ic" title="Logs">≣</button>
         <button id="inb-collapse" class="inb-ic" title="Minimize">–</button>
         <button id="inb-close" class="inb-ic" title="Close (your call keeps running)">✕</button>
       </div>
+    </div>
+
+    <!-- OFF state: phone is off until the agent turns it on -->
+    <div id="inb-off" class="inb-off">
+      <div class="inb-off-ic">⏻</div>
+      <div class="inb-off-t">Phone is off</div>
+      <div class="inb-off-s">Turn it on to start receiving calls.</div>
+      <button id="inb-on-btn" class="inb-on-btn">Turn on phone</button>
     </div>
 
     <!-- availability: segmented Active / Pause -->

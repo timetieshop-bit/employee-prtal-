@@ -1452,6 +1452,7 @@ ipcMain.handle('auth:logout', async () => {
     stopConfigPoll();
     stopSupervisePoll();
     setSupervising(false);
+    if (inboundPhone) { try { inboundPhone.stop(); } catch (_) {} inboundPhone = null; } // deregister inbound phone on logout
     return r;
   } catch (e) { return { ok: false, error: 'network' }; }
 });
