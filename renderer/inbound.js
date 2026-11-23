@@ -13,7 +13,7 @@
   const panel = $('inbound-panel');
   if (!btn || !panel) return;
 
-  const INBOUND_BUILD = '0.9.51';
+  const INBOUND_BUILD = '0.9.53';
   let cfg = null, viewTimer = null, logLines = [];
   let sessionStart = Date.now();   // recents show only calls since the phone was turned on this session
   let callTimer = null, callStart = 0;
@@ -97,7 +97,7 @@
     log('phone turned ON');
     try { P.inboundStart && P.inboundStart(cfg); } catch (_) {}
     startPolling();
-    setAvail('active'); // turning on means ready to take calls
+    setAvail('pause'); // start paused; the agent goes Active when ready to take calls
   }
   function powerOff() {
     if (!powered) { showOffState(); return; }
@@ -241,9 +241,17 @@
   function paintRoster(roster) {
     const wrap = $('inb-roster'); if (!wrap) return;
     if (!roster.length) { wrap.innerHTML = '<div class="inb-muted">No one online.</div>'; return; }
-    wrap.innerHTML = roster.map((r) =>
-      '<div class="inb-ra"><span class="inb-pill ' + r.status + '">' + r.status + '</span>' +
-      '<span class="inb-ra-nm">' + esc(r.name) + (r.self ? ' <span class="inb-muted">(you)</span>' : '') + '</span></div>').join('');
+    const meta = (s) => s === 'active' ? { cls: 'active', label: 'Active', pulse: true }
+      : s === 'incall' ? { cls: 'incall', label: 'On call', pulse: true }
+      : s === 'paused' ? { cls: 'paused', label: 'Paused', pulse: false }
+      : { cls: 'offline', label: 'Offline', pulse: false };
+    wrap.innerHTML = roster.map((r) => {
+      const m = meta(r.status);
+      return '<div class="inb-ra">' +
+        '<span class="inb-ra-nm">' + esc(r.name) + (r.self ? ' <span class="inb-muted">(you)</span>' : '') + '</span>' +
+        '<span class="inb-stat ' + m.cls + '"><span class="inb-stat-dot' + (m.pulse ? ' pulse' : '') + '"></span>' + m.label + '</span>' +
+        '</div>';
+    }).join('');
   }
 
   // ---- on-call UI ----
