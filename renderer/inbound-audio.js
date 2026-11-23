@@ -22,7 +22,13 @@ window.InboundAudio = (function () {
   async function start() {
     if (started) return true;
     try {
-      ctx = new AudioContext();
+      // Run the whole pipeline at 8 kHz so the browser's high-quality resampler
+      // does the mic downsample (device rate → 8k) with proper anti-aliasing,
+      // instead of our naive one. This removes the grainy distortion on the
+      // agent→customer path. Falls back to the default rate if 8k isn't allowed
+      // (the worklets still resample, now with a box low-pass).
+      try { ctx = new AudioContext({ sampleRate: 8000 }); }
+      catch (_) { ctx = new AudioContext(); }
       if (ctx.state === 'suspended') await ctx.resume();
       await ctx.audioWorklet.addModule('vendor/spk-worklet.js');
       await ctx.audioWorklet.addModule('vendor/mic-worklet.js');
