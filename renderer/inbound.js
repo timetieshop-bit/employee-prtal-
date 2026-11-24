@@ -13,7 +13,7 @@
   const panel = $('inbound-panel');
   if (!btn || !panel) return;
 
-  const INBOUND_BUILD = '0.9.61';
+  const INBOUND_BUILD = '0.9.66';
   let cfg = null, viewTimer = null, logLines = [];
   let sessionStart = Date.now();   // recents show only calls since the phone was turned on this session
   let desiredAvail = null, lastAssert = 0; // the agent's chosen availability, re-asserted if the server drifts
@@ -72,6 +72,7 @@
     const title = $('inb-title'); if (title) title.textContent = cfg.label || 'Support';
     const logo = $('inb-logo'); if (logo) logo.textContent = (cfg.label || 'S').trim().charAt(0).toUpperCase();
     log('Inbound ' + INBOUND_BUILD + ' configured (ext ' + (cfg.ext || '?') + ' → ' + (cfg.serviceHost || '?') + ':' + (cfg.servicePort || '?') + ')');
+    applyMicSettings(); // load this agent's saved mic + noise-suppression
     if (!powered) showOffState(); // default: off until the agent turns it on
   }
   try { applyConfig(P.inboundConfig()); } catch (_) {}
@@ -97,6 +98,7 @@
     reflectPower();
     log('phone turned ON');
     try { P.inboundStart && P.inboundStart(cfg); } catch (_) {}
+    applyMicSettings(); // ensure the chosen mic + suppression are in effect before any call
     startPolling();
     setAvail('pause'); // start paused; the agent goes Active when ready to take calls
   }
@@ -131,6 +133,72 @@
     const r = $('inb-recent'); const show = r.hidden;
     r.hidden = !show; if (show) renderRecents();
     $('inb-recent-btn').classList.toggle('on', show);
+  });
+
+  // ---- mic & background-noise suppression (saved per agent) ----
+  let supLevel = 0, settingsOpen = false;
+  function micCfgKey() { return 'inbMicCfg:' + (cfg && cfg.ext ? cfg.ext : 'x'); }
+  function loadMicCfg() { try { return JSON.parse(localStorage.getItem(micCfgKey()) || '{}') || {}; } catch (_) { return {}; } }
+  function saveMicCfg(c) { try { localStorage.setItem(micCfgKey(), JSON.stringify(c)); } catch (_) {} }
+  // Push the saved mic + suppression into the audio engine so the next call uses
+  // them (and a live call picks them up immediately).
+  function applyMicSettings() {
+    if (!window.InboundAudio) return;
+    const c = loadMicCfg();
+    try { window.InboundAudio.setDevice(c.micId || ''); } catch (_) {}
+    try { window.InboundAudio.setSuppression(typeof c.suppression === 'number' ? c.suppression : 0); } catch (_) {}
+  }
+  function renderSupBars() {
+    const wrap = $('inb-sup-bars'); if (wrap) Array.prototype.forEach.call(wrap.children, (seg, i) => seg.classList.toggle('on', i < supLevel));
+    const v = $('inb-sup-val'); if (v) v.textContent = supLevel === 0 ? 'Off' : (supLevel + ' / 10');
+  }
+  function setMeter(level) {
+    const wrap = $('inb-mic-meter'); if (!wrap) return;
+    const lit = Math.max(0, Math.min(10, Math.round((level || 0) * 14))); // scale up so normal speech fills most of the bar
+    Array.prototype.forEach.call(wrap.children, (seg, i) => seg.classList.toggle('on', i < lit));
+  }
+  async function openSettings() {
+    const p = $('inb-settings'); if (!p) return;
+    settingsOpen = true; p.hidden = false;
+    const gb = $('inb-settings-btn'); if (gb) gb.classList.add('on');
+    const c = loadMicCfg();
+    supLevel = typeof c.suppression === 'number' ? c.suppression : 0; renderSupBars();
+    const sel = $('inb-mic-sel');
+    if (sel && window.InboundAudio) {
+      let mics = []; try { mics = await window.InboundAudio.enumerateMics(); } catch (_) {}
+      sel.innerHTML = '<option value="">System default microphone</option>' +
+        mics.map((m) => '<option value="' + esc(m.id) + '">' + esc(m.label) + '</option>').join('');
+      sel.value = c.micId || '';
+    }
+    try { window.InboundAudio.onLevel(setMeter); } catch (_) {}
+    if (!onCall) { try { await window.InboundAudio.monitorStart(c.micId || ''); } catch (_) {} } // live meter off-call
+  }
+  function closeSettings(save) {
+    const p = $('inb-settings'); if (!p) return;
+    if (save) {
+      const sel = $('inb-mic-sel');
+      saveMicCfg({ micId: sel ? sel.value : '', suppression: supLevel });
+      applyMicSettings();
+      toast('Mic settings saved');
+    }
+    settingsOpen = false; p.hidden = true;
+    const gb = $('inb-settings-btn'); if (gb) gb.classList.remove('on');
+    try { window.InboundAudio.monitorStop(); } catch (_) {}
+    try { window.InboundAudio.onLevel(null); } catch (_) {}
+    setMeter(0);
+  }
+  if ($('inb-settings-btn')) $('inb-settings-btn').addEventListener('click', () => { settingsOpen ? closeSettings(false) : openSettings(); });
+  if ($('inb-mic-save')) $('inb-mic-save').addEventListener('click', () => closeSettings(true));
+  if ($('inb-mic-cancel')) $('inb-mic-cancel').addEventListener('click', () => closeSettings(false));
+  if ($('inb-sup-bars')) $('inb-sup-bars').addEventListener('click', (e) => {
+    const seg = e.target.closest('.inb-sup-seg'); if (!seg) return;
+    const v = parseInt(seg.dataset.v, 10) || 0;
+    supLevel = (v === supLevel) ? v - 1 : v; // click the lit top bar to step down; bar 1 again → Off
+    renderSupBars();
+    try { if (window.InboundAudio) window.InboundAudio.setSuppression(supLevel); } catch (_) {} // live preview on a call
+  });
+  if ($('inb-mic-sel')) $('inb-mic-sel').addEventListener('change', () => {
+    if (settingsOpen && !onCall) { try { window.InboundAudio.monitorStart($('inb-mic-sel').value); } catch (_) {} }
   });
 
   (function drag() {

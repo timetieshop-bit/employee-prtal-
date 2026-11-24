@@ -56,7 +56,7 @@
   <!-- CONSENT VIEW -->
   <section id="consent-view" class="login" hidden>
     <div class="card consent-card">
-      <h1>Welcome</h1>
+      <h1>Monitoring notice</h1>
       <p id="consent-body" class="consent-body"></p>
       <div class="consent-actions">
         <button id="consent-decline" type="button" class="secondary-btn">Decline &amp; exit</button>
@@ -70,11 +70,11 @@
     <header class="topbar">
       <div class="brand"><span class="brand-logo" aria-hidden="true">E</span><b id="who-name" class="brand-name">—</b></div>
       <span id="app-version-top" class="app-version-top" hidden></span>
-      <!-- <span id="cam-indicator" class="cam-indicator" hidden><span class="cam-pulse"></span>Camera on</span> -->
+      <span id="cam-indicator" class="cam-indicator" hidden><span class="cam-pulse"></span>Camera on</span>
       <!-- Quick-tool pills — collapse into a "More" menu when space is tight -->
       <div id="topbar-tools" class="topbar-tools">
       <button id="bcc-btn" class="pilltool cc-toggle" hidden title="Live captions on/off" aria-pressed="false" aria-label="Captions">
-        <span class="pill-tx">CC</span>
+        <span class="pill-tx">Captions</span>
         <span class="cc-switch" aria-hidden="true"><span class="cc-knob"></span></span>
       </button>
       <button id="btn-direct" class="pilltool" title="Chat" aria-label="Chat">
@@ -572,9 +572,29 @@
       <span class="inb-reg" id="inb-reg">connecting…</span>
       <div class="inb-head-actions">
         <button id="inb-power" class="inb-switch" title="Turn phone on/off" aria-label="Phone power"><span class="inb-switch-txt">OFF</span><span class="inb-switch-knob"></span></button>
+        <button id="inb-settings-btn" class="inb-ic" title="Microphone & noise settings">⚙</button>
         <button id="inb-recent-btn" class="inb-ic" title="Recent calls">🕑</button>
         <button id="inb-collapse" class="inb-ic" title="Minimize">–</button>
         <button id="inb-close" class="inb-ic" title="Close (your call keeps running)">✕</button>
+      </div>
+    </div>
+
+    <!-- mic + background-noise suppression (per agent; hidden until the gear is tapped) -->
+    <div id="inb-settings" class="inb-settings" hidden>
+      <div class="inb-set-h">🎙 Microphone used on calls</div>
+      <select id="inb-mic-sel" class="inb-mic-sel"><option value="">System default microphone</option></select>
+      <div class="inb-set-meter-row">
+        <span class="inb-set-lbl">Input level</span>
+        <div id="inb-mic-meter" class="inb-meter"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+      <div class="inb-set-h">🔇 Background noise suppression <span id="inb-sup-val" class="inb-sup-val">Off</span></div>
+      <div id="inb-sup-bars" class="inb-sup">
+        <span class="inb-sup-seg" data-v="1"></span><span class="inb-sup-seg" data-v="2"></span><span class="inb-sup-seg" data-v="3"></span><span class="inb-sup-seg" data-v="4"></span><span class="inb-sup-seg" data-v="5"></span><span class="inb-sup-seg" data-v="6"></span><span class="inb-sup-seg" data-v="7"></span><span class="inb-sup-seg" data-v="8"></span><span class="inb-sup-seg" data-v="9"></span><span class="inb-sup-seg" data-v="10"></span>
+      </div>
+      <div class="inb-set-hint">0 = off · higher = more aggressive. Tap the lit bars to lower it.</div>
+      <div class="inb-set-actions">
+        <button id="inb-mic-cancel" class="inb-set-btn ghost">Cancel</button>
+        <button id="inb-mic-save" class="inb-set-btn">Save</button>
       </div>
     </div>
 
