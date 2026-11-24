@@ -1478,3 +1478,38 @@ html, body {
 .inb-qbubble.has::after { animation-delay: .9s; }
 @keyframes qripple { 0% { transform: scale(1); opacity: .55; } 100% { transform: scale(2.2); opacity: 0; } }
 .inb-qlabel { text-align: center; font-size: 11px; color: var(--muted); margin-top: 9px; }
+
+/* ===== Training / screen-share ========================================== */
+/* admin toolbar inside the Live agents panel */
+.tr-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line, #e6e8ec); }
+.tr-selall { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.tr-share-btn { border: none; border-radius: 9px; padding: 8px 14px; font-weight: 700; font-size: 12.5px; color: #fff; background: #1a73e8; cursor: pointer; }
+.tr-share-btn:disabled { background: #b9c3d2; cursor: default; }
+.sv-sel { width: 16px; height: 16px; accent-color: #1a73e8; cursor: pointer; flex: none; }
+/* admin "now sharing" strip */
+.tr-live { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #e9f3ff; border-bottom: 1px solid #cfe2ff; }
+.tr-live[hidden] { display: none; }
+.tr-live-dot { width: 9px; height: 9px; border-radius: 50%; background: #1a73e8; box-shadow: 0 0 0 0 rgba(26,115,232,.5); animation: trpulse 1.5s infinite; flex: none; }
+@keyframes trpulse { 0% { box-shadow: 0 0 0 0 rgba(26,115,232,.5); } 100% { box-shadow: 0 0 0 9px rgba(26,115,232,0); } }
+.tr-live-txt { font-size: 12.5px; color: #124; flex: 1 1 auto; }
+.tr-mic, .tr-stop { border: none; border-radius: 8px; padding: 6px 11px; font-weight: 700; font-size: 12px; cursor: pointer; }
+.tr-mic { background: #d8ecff; color: #0b57d0; } .tr-mic.off { background: #f3d6d6; color: #a61b1b; }
+.tr-stop { background: #e5342e; color: #fff; }
+
+/* agent overlay (receiving a shared screen) */
+.tr-overlay { position: fixed; inset: 0; background: rgba(10,12,16,.82); backdrop-filter: blur(3px); display: grid; place-items: center; z-index: 460; }
+.tr-overlay[hidden] { display: none; }
+.tr-ov-box { max-width: 1240px; width: 94vw; border-radius: 16px; overflow: hidden; background: #0e1116; box-shadow: 0 24px 70px rgba(0,0,0,.6); border: 1px solid #262b33; }
+.tr-ov-head { display: flex; align-items: center; gap: 12px; padding: 11px 14px; background: #12161c; border-bottom: 1px solid #222832; color: #e8edf5; }
+.tr-ov-live { display: inline-flex; align-items: center; gap: 7px; font-weight: 800; font-size: 11px; letter-spacing: .5px; color: #ff5b5b; }
+.tr-ov-live .d { width: 8px; height: 8px; border-radius: 50%; background: #ff5b5b; animation: trpulse2 1.4s infinite; }
+@keyframes trpulse2 { 0% { opacity: 1; } 50% { opacity: .35; } 100% { opacity: 1; } }
+.tr-ov-who { flex: 1 1 auto; font-size: 13px; color: #cfd6e0; }
+.tr-ov-actions { display: flex; gap: 8px; }
+.tr-ov-btn { background: #1b212b; color: #dfe6ef; border: 1px solid #2b323d; border-radius: 8px; padding: 6px 11px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.tr-ov-btn.off { background: #3a2020; color: #ff9a9a; border-color: #5a2a2a; }
+.tr-ov-stage { position: relative; background: #05070a; min-height: 320px; display: grid; place-items: center; }
+.tr-ov-stage img { max-width: 100%; max-height: 80vh; display: none; }
+.tr-ov-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; color: #8b93a0; font-size: 13px; padding: 60px 0; }
+.tr-ov-restore { position: fixed; right: 18px; bottom: 18px; z-index: 461; border: none; border-radius: 999px; padding: 12px 18px; font-weight: 700; font-size: 13px; color: #fff; background: #1a73e8; box-shadow: 0 10px 28px rgba(0,0,0,.35); cursor: pointer; }
+.tr-ov-restore[hidden] { display: none; }

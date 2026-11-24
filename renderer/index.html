@@ -641,10 +641,41 @@
       </div>
     </div>
     <div class="sv-panel-body">
+      <div id="tr-bar" class="tr-bar">
+        <label class="tr-selall"><input type="checkbox" id="tr-selall"> Select all</label>
+        <div class="tr-bar-actions">
+          <button id="tr-share" class="tr-share-btn" disabled>▶ Share my screen</button>
+        </div>
+      </div>
+      <div id="tr-live" class="tr-live" hidden>
+        <span class="tr-live-dot"></span>
+        <span class="tr-live-txt">Sharing your screen with <b id="tr-live-n">0</b></span>
+        <button id="tr-mic" class="tr-mic" title="Mute / unmute your mic">🎙️ Mic on</button>
+        <button id="tr-stop" class="tr-stop">■ Stop</button>
+      </div>
       <div id="sv-list" class="sv-list"></div>
       <div id="sv-list-empty" class="sv-list-empty" hidden>No agents are online right now.</div>
     </div>
   </aside>
+
+  <!-- AGENT: overlay shown while an admin is sharing their screen with me -->
+  <div id="tr-overlay" class="tr-overlay" hidden>
+    <div class="tr-ov-box">
+      <div class="tr-ov-head">
+        <span class="tr-ov-live"><span class="d"></span>LIVE</span>
+        <span class="tr-ov-who">Training · <b id="tr-ov-who">Trainer</b> is sharing their screen</span>
+        <div class="tr-ov-actions">
+          <button id="tr-ov-mic" class="tr-ov-btn" title="Mute / unmute your mic">🎙️ Mic on</button>
+          <button id="tr-ov-min" class="tr-ov-btn" title="Minimize">—</button>
+        </div>
+      </div>
+      <div class="tr-ov-stage">
+        <div class="tr-ov-empty" id="tr-ov-empty"><div class="sv-spin"></div><div>Waiting for the trainer’s screen…</div></div>
+        <img id="tr-ov-img" alt="Trainer screen" draggable="false" />
+      </div>
+    </div>
+    <button id="tr-ov-restore" class="tr-ov-restore" hidden>🎓 Training — tap to open</button>
+  </div>
 
   <!-- ADMIN: full-screen live viewer with optional click/type control -->
   <div id="sv-modal" class="sv-modal" hidden>
@@ -681,5 +712,6 @@
   <script src="inbound-audio.js"></script>
   <script src="inbound.js"></script>
   <script src="supervise.js"></script>
+  <script src="train.js"></script>
 </body>
 </html>

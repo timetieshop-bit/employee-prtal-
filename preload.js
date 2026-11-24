@@ -81,6 +81,15 @@ contextBridge.exposeInMainWorld('portal', {
   svFrame: (uid) => ipcRenderer.invoke('sv:frame', uid),
   svInput: (uid, events) => ipcRenderer.invoke('sv:input', uid, events),
 
+  // Training: admin shares own window with selected agents + two-way audio.
+  trainStart: (targets) => ipcRenderer.invoke('train:start', targets),
+  trainSetTargets: (targets) => ipcRenderer.invoke('train:settargets', targets),
+  trainStop: () => ipcRenderer.invoke('train:stop'),
+  trainPoll: () => ipcRenderer.invoke('train:poll'),
+  trainFrame: (adminId) => ipcRenderer.invoke('train:frameGet', adminId),
+  trainAudioPost: (adminId, b64) => ipcRenderer.invoke('train:audioPost', adminId, b64),
+  trainAudioGet: (adminId, since) => ipcRenderer.invoke('train:audioGet', adminId, since),
+
   // Google Sheets assigned to this user (names + ids only; the URL stays in the
   // main process and is resolved just-in-time via sheetUrl()).
   sheetsList: () => { try { return ipcRenderer.sendSync('sheets:get') || []; } catch (_) { return []; } },

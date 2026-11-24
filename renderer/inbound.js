@@ -13,7 +13,7 @@
   const panel = $('inbound-panel');
   if (!btn || !panel) return;
 
-  const INBOUND_BUILD = '0.9.55';
+  const INBOUND_BUILD = '0.9.57';
   let cfg = null, viewTimer = null, logLines = [];
   let sessionStart = Date.now();   // recents show only calls since the phone was turned on this session
   let callTimer = null, callStart = 0;

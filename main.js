@@ -1272,6 +1272,59 @@ ipcMain.handle('sv:frame', async (_e, uid) => {
   } catch (_) { return { ok: false, status: 0 }; }
 });
 
+// ---- Training: an admin shares their portal window with selected agents and
+// talks with them two-way. Screen frames and audio chunks relay over HTTP, the
+// same model as supervision. ----
+let trainSharing = false, trainBusy = false, trainCapTimer = null, trainHbTimer = null;
+async function trainCaptureAndSend() {
+  if (!trainSharing || trainBusy || !mainWindow || mainWindow.isDestroyed()) return;
+  trainBusy = true;
+  try {
+    const img = await mainWindow.webContents.capturePage();
+    const sz = img.getSize();
+    const frame = (sz.width > 1366) ? img.resize({ width: 1366 }) : img;
+    const jpeg = frame.toJPEG(45);
+    await apiCall('train_frame.php', 'POST', { frame: jpeg.toString('base64') });
+  } catch (_) { /* transient */ } finally { trainBusy = false; }
+}
+function startTrainLoops() {
+  stopTrainLoops();
+  trainCapTimer = setInterval(trainCaptureAndSend, 500); // ~2 fps
+  trainHbTimer  = setInterval(() => { apiCall('train.php', 'POST', { action: 'heartbeat' }).catch(() => {}); }, 4000);
+}
+function stopTrainLoops() {
+  if (trainCapTimer) { clearInterval(trainCapTimer); trainCapTimer = null; }
+  if (trainHbTimer)  { clearInterval(trainHbTimer);  trainHbTimer = null; }
+}
+ipcMain.handle('train:start', async (_e, targets) => {
+  try { const r = await apiCall('train.php', 'POST', { action: 'start', targets: targets || [] }); trainSharing = true; startTrainLoops(); return r; }
+  catch (_) { return { ok: false }; }
+});
+ipcMain.handle('train:settargets', async (_e, targets) => {
+  try { return await apiCall('train.php', 'POST', { action: 'settargets', targets: targets || [] }); } catch (_) { return { ok: false }; }
+});
+ipcMain.handle('train:stop', async () => {
+  trainSharing = false; stopTrainLoops();
+  try { return await apiCall('train.php', 'POST', { action: 'stop' }); } catch (_) { return { ok: false }; }
+});
+ipcMain.handle('train:poll', async () => {
+  try { return await apiCall('train.php', 'GET'); } catch (_) { return { ok: false, training: false }; }
+});
+ipcMain.handle('train:audioPost', async (_e, adminId, b64) => {
+  try { return await apiCall('train_audio.php', 'POST', { admin_id: parseInt(adminId, 10), chunk: b64 }); } catch (_) { return { ok: false }; }
+});
+ipcMain.handle('train:audioGet', async (_e, adminId, since) => {
+  try { return await apiCall(`train_audio.php?admin_id=${parseInt(adminId, 10)}&since=${parseInt(since, 10) || 0}`, 'GET'); } catch (_) { return { ok: false, chunks: [] }; }
+});
+ipcMain.handle('train:frameGet', async (_e, adminId) => {
+  try {
+    const headers = {}; if (currentToken) headers['X-Auth-Token'] = currentToken;
+    const r = await fetch(`${API_BASE}/train_frame.php?admin_id=${parseInt(adminId, 10)}&t=${Date.now()}`, { method: 'GET', headers, cache: 'no-store' });
+    if (r.status === 200) { const buf = Buffer.from(await r.arrayBuffer()); return { ok: true, status: 200, dataUrl: 'data:image/jpeg;base64,' + buf.toString('base64') }; }
+    return { ok: true, status: r.status };
+  } catch (_) { return { ok: false, status: 0 }; }
+});
+
 // ---- Native (UDP) SIP softphone: direct-to-trunk calling, no WSS/VPS ----
 let nativePhone = null;
 function nativeSend(channel, data) {

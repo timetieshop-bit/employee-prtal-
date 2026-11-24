@@ -30,7 +30,10 @@
   async function loadList() {
     let res = null;
     try { res = await window.portal.svList(); } catch (_) {}
-    const users = (res && Array.isArray(res.users)) ? res.users : [];
+    let users = (res && Array.isArray(res.users)) ? res.users : [];
+    // Dedupe by user id (belt-and-suspenders against any duplicate rows).
+    const seen = new Set();
+    users = users.filter((u) => { const k = u.id != null ? u.id : u.username; if (seen.has(k)) return false; seen.add(k); return true; });
     // Online agents only, and never offer to watch yourself.
     const online = users.filter((u) => u.online && u.username !== loggedInUserName());
     renderList(online);
@@ -55,6 +58,7 @@
       const row = document.createElement('div');
       row.className = 'sv-row';
       row.innerHTML = `
+        <input type="checkbox" class="sv-sel" data-uid="${u.id}" data-name="${esc(name)}" title="Select for screen-share / training">
         <span class="sv-ava">${esc(initial)}</span>
         <span class="sv-row-main">
           <span class="sv-row-name">${esc(name)}</span>
@@ -63,6 +67,8 @@
         <button class="sv-watch-btn" data-uid="${u.id}" data-name="${esc(name)}" title="View this agent's screen">👁 View</button>`;
       listEl.appendChild(row);
     }
+    // Let the training module refresh its toolbar/selection state.
+    try { if (window.__trainOnList) window.__trainOnList(); } catch (_) {}
   }
 
   function openPanel() {
