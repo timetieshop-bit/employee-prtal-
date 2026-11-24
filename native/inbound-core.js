@@ -52,23 +52,21 @@ class Rtp {
   setRemote(ip, port, payload) { this.remoteIp = ip; this.remotePort = port; this.payload = payload === 8 ? 8 : 0; }
   writePcm(pcm) {
     if (!this.remoteIp) return;
-    this.txQueue.push(pcm);
-    this._txSamples = (this._txSamples || 0) + pcm.length;
-    // Bound the mic→RTP backlog so the agent→customer delay can't accumulate over
-    // the call (the 20ms timer drifts slightly slower than real time). Over the
-    // high-water mark, drop oldest down to a small target so latency stays ~50ms.
-    const HIGH = 1600, LOW = 400; // 200ms → 50ms @ 8kHz
-    if (this._txSamples > HIGH) {
-      while (this._txSamples > LOW && this.txQueue.length > 1) this._txSamples -= this.txQueue.shift().length;
-    }
+    // Send the mic frame immediately, paced by the mic's own audio clock. This is
+    // the key to clean agent→customer audio: a JS 20ms timer drifts against the
+    // audio clock and the resulting queue over/underrun was the distortion. One
+    // worklet frame = 160 samples = one 20ms packet.
+    this.lastTx = Date.now();
+    this._send(this.muted ? new Int16Array(pcm.length || 160) : pcm);
   }
   startSending() {
     if (this.txTimer) return;
+    // Audio is now sent directly from writePcm (mic-clock paced). This timer is
+    // only a keepalive: if the mic stalls for a moment, emit a silence frame so
+    // the RTP stream and the NAT pinhole stay alive.
     this.txTimer = setInterval(() => {
-      let frame = new Int16Array(160); let off = 0;
-      while (off < 160 && this.txQueue.length) { const q = this.txQueue[0]; const n = Math.min(q.length, 160 - off); frame.set(q.subarray(0, n), off); off += n; if (n < q.length) this.txQueue[0] = q.subarray(n); else this.txQueue.shift(); this._txSamples = Math.max(0, (this._txSamples || 0) - n); }
-      if (this.muted) frame = new Int16Array(160);
-      this._send(frame);
+      if (!this.remoteIp) return;
+      if (Date.now() - (this.lastTx || 0) >= 40) { this.lastTx = Date.now(); this._send(new Int16Array(160)); }
     }, 20);
   }
   _send(pcm) {
