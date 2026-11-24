@@ -56,7 +56,7 @@
   <!-- CONSENT VIEW -->
   <section id="consent-view" class="login" hidden>
     <div class="card consent-card">
-      <h1>Monitoring notice</h1>
+      <h1>Welcome</h1>
       <p id="consent-body" class="consent-body"></p>
       <div class="consent-actions">
         <button id="consent-decline" type="button" class="secondary-btn">Decline &amp; exit</button>
@@ -70,12 +70,11 @@
     <header class="topbar">
       <div class="brand"><span class="brand-logo" aria-hidden="true">E</span><b id="who-name" class="brand-name">—</b></div>
       <span id="app-version-top" class="app-version-top" hidden></span>
-      <span id="cam-indicator" class="cam-indicator" hidden><span class="cam-pulse"></span>Camera on</span>
-      <div class="spacer"></div>
-
-      <!-- Quick-tool pills -->
+      <!-- <span id="cam-indicator" class="cam-indicator" hidden><span class="cam-pulse"></span>Camera on</span> -->
+      <!-- Quick-tool pills — collapse into a "More" menu when space is tight -->
+      <div id="topbar-tools" class="topbar-tools">
       <button id="bcc-btn" class="pilltool cc-toggle" hidden title="Live captions on/off" aria-pressed="false" aria-label="Captions">
-        <span class="pill-tx">Captions</span>
+        <span class="pill-tx">CC</span>
         <span class="cc-switch" aria-hidden="true"><span class="cc-knob"></span></span>
       </button>
       <button id="btn-direct" class="pilltool" title="Chat" aria-label="Chat">
@@ -113,7 +112,10 @@
         <span class="pill-tx">Agents</span>
         <span id="sv-online-badge" class="badge" hidden>0</span>
       </button>
+      <button id="tb-more" class="pilltool tb-more" hidden title="More tools" aria-label="More tools"><span class="tb-more-dots" aria-hidden="true">⋯</span><span class="pill-tx">More</span></button>
+      </div><!-- /topbar-tools -->
 
+      <div class="topbar-right">
       <div class="wall-clock" title="Current time">
         <svg viewBox="0 0 24 24" aria-hidden="true" class="wall-clock-ic"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         <span id="wall-clock" class="wall-clock-tx">--:--:--</span>
@@ -126,6 +128,8 @@
       </div>
       <button id="minimize-btn" class="pillbtn" title="Minimize (keeps your work; needs the exit password)" hidden>Minimize</button>
       <button id="exit-btn" class="pillbtn exit-btn" title="Exit the portal">Exit</button>
+      </div><!-- /topbar-right -->
+      <div id="tb-more-menu" class="tb-more-menu" hidden></div>
     </header>
 
     <!-- Tab strip -->
@@ -713,5 +717,6 @@
   <script src="inbound.js"></script>
   <script src="supervise.js"></script>
   <script src="train.js"></script>
+  <script src="topbar.js"></script>
 </body>
 </html>

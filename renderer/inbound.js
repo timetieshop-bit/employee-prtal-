@@ -13,9 +13,10 @@
   const panel = $('inbound-panel');
   if (!btn || !panel) return;
 
-  const INBOUND_BUILD = '0.9.57';
+  const INBOUND_BUILD = '0.9.61';
   let cfg = null, viewTimer = null, logLines = [];
   let sessionStart = Date.now();   // recents show only calls since the phone was turned on this session
+  let desiredAvail = null, lastAssert = 0; // the agent's chosen availability, re-asserted if the server drifts
   let callTimer = null, callStart = 0;
   let muteOn = false, holdOn = false;
   let availActive = false;      // our chosen availability
@@ -101,7 +102,7 @@
   }
   function powerOff() {
     if (!powered) { showOffState(); return; }
-    powered = false;
+    powered = false; desiredAvail = null; // stop re-asserting availability once off
     if (onCall) { bridge('inboundHangup'); endCallLocal('phone off'); }
     try { P.acdSet && P.acdSet('pause'); } catch (_) {}
     try { P.inboundStop && P.inboundStop(); } catch (_) {}
@@ -153,6 +154,9 @@
 
   // ---- availability: segmented Active / Pause ----
   async function setAvail(next) {
+    // Remember the agent's intent so a lost/slow request can't silently flip them
+    // (the "auto-pause"): paintView re-asserts this if the server drifts.
+    desiredAvail = next; lastAssert = Date.now();
     // Reflect the choice immediately so the toggle never looks "stuck" while the
     // server round-trip is in flight; polling reconciles with the real state.
     availActive = (next === 'active');
@@ -172,8 +176,21 @@
 
   function paintView(v) {
     const st = (v.me && v.me.status) || 'offline';
-    availActive = (st === 'active' || st === 'incall');
     const registered = !!(v.me && v.me.registered);
+    // Honour the agent's chosen availability. If they chose Active/Pause but the
+    // server still reports the opposite (a prior request was lost or slow), keep
+    // showing their intent and quietly re-send it, instead of flipping the phone
+    // on its own — this is what used to look like the phone "auto-pausing".
+    if (powered && registered && desiredAvail && st !== 'incall') {
+      const wantActive = (desiredAvail === 'active');
+      availActive = wantActive;
+      if ((st === 'active') !== wantActive && Date.now() - lastAssert > 3000) {
+        lastAssert = Date.now();
+        try { P.acdSet(desiredAvail).catch(function () {}); } catch (_) {}
+      }
+    } else {
+      availActive = (st === 'active' || st === 'incall');
+    }
 
     // segmented control look
     $('inb-active').classList.toggle('on', availActive);

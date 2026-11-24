@@ -1513,3 +1513,27 @@ html, body {
 .tr-ov-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; color: #8b93a0; font-size: 13px; padding: 60px 0; }
 .tr-ov-restore { position: fixed; right: 18px; bottom: 18px; z-index: 461; border: none; border-radius: 999px; padding: 12px 18px; font-weight: 700; font-size: 13px; color: #fff; background: #1a73e8; box-shadow: 0 10px 28px rgba(0,0,0,.35); cursor: pointer; }
 .tr-ov-restore[hidden] { display: none; }
+
+/* ===== Top bar overflow: compact + "More" menu ========================== */
+html, body { overflow-x: hidden; }                 /* the whole app never scrolls sideways */
+.topbar { position: relative; flex-wrap: nowrap; overflow: visible; }
+.topbar-tools { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.topbar-right { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+/* icon-only mode: drop pill labels to save width (tooltips still name them) */
+.topbar-tools.icon-only .pill-tx { display: none; }
+.topbar-tools.icon-only .pilltool,
+.topbar-tools.icon-only .pillbtn { padding: 0 10px; }
+.tb-more .tb-more-dots { font-size: 18px; line-height: 1; font-weight: 800; letter-spacing: 1px; }
+/* the dropdown holding pills that didn't fit */
+.tb-more-menu { position: absolute; top: calc(100% + 6px); z-index: 300;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0,0,0,.18); padding: 6px; display: flex; flex-direction: column;
+  gap: 4px; min-width: 190px; max-height: 70vh; overflow: auto; }
+.tb-more-menu[hidden] { display: none; }
+.tb-more-menu .pilltool,
+.tb-more-menu .pillbtn { width: 100%; height: 38px; justify-content: flex-start; border-color: transparent; border-radius: 9px; }
+.tb-more-menu .pilltool:hover,
+.tb-more-menu .pillbtn:hover { background: var(--hover); }
+.tb-more-menu .pill-tx { display: inline-flex !important; }   /* always show names in the menu */
+.tb-more-menu .badge { position: static; margin-left: auto; }
+.tb-more-menu .cc-switch { margin-left: auto; }

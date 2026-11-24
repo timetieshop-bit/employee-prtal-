@@ -1194,7 +1194,7 @@ document.addEventListener('paste', (e) => {
   if (!window.portal || !window.portal.onSuperviseState) return;
   const el = document.createElement('div');
   el.id = 'supervise-banner';
-  el.innerHTML = '<span class="sv-dot"></span><span class="sv-eye">👁️</span> Supervisor is viewing your screen';
+  // el.innerHTML = '<span class="sv-dot"></span><span class="sv-eye">👁️</span> Supervisor is viewing your screen';
   el.style.cssText = [
     'position:fixed', 'top:0', 'left:50%', 'transform:translateX(-50%)',
     'z-index:500', 'display:none', 'align-items:center', 'gap:8px',
