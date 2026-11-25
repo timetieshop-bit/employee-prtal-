@@ -148,6 +148,8 @@ class SipPhone extends EventEmitter {
     this.rinstance = rnd(16); // stable per-session Contact id, like eyeBeam
     this.dialog = null;     // active call dialog state
     this.regTimer = null;
+    this._regConfirm = null;   // fast-retry timer for an unconfirmed refresh REGISTER
+    this._refreshTries = 0;
     this.pendingAuth = {};  // last auth challenge per method
   }
 
@@ -232,6 +234,34 @@ class SipPhone extends EventEmitter {
     }, 8000);
   }
   _clearRegWatch() { if (this._regWatch) { clearTimeout(this._regWatch); this._regWatch = null; } }
+  // A periodic registration refresh (keep-alive for the server's binding). Unlike
+  // the initial register, a refresh must survive a dropped packet without waiting a
+  // whole cycle — so it confirms a 2xx came back and fast-retries if not.
+  _refresh() {
+    this._refreshTries = 0;
+    this._regAuthTries = 0;
+    this._sendRegister(3600);
+    this._armRegConfirm();
+  }
+  _armRegConfirm() {
+    if (this._regConfirm) clearTimeout(this._regConfirm);
+    // Expect a 2xx shortly after a refresh REGISTER. On a lossy link (or a NAT that
+    // just rebound our port) the REGISTER or its 200 can be dropped; rather than let
+    // the server's binding lapse until the next refresh cycle — which is what put
+    // agents into the "registration expired" churn — resend quickly a few times.
+    // This runs even while we still believe we're registered, because the goal is
+    // to keep the SERVER's binding alive, not our local flag.
+    this._regConfirm = setTimeout(() => {
+      this._regConfirm = null;
+      if ((this._refreshTries || 0) >= 4) return; // give up until the next refresh tick
+      this._refreshTries = (this._refreshTries || 0) + 1;
+      this.emit('status', 'REGISTER refresh unconfirmed — fast retry ' + this._refreshTries);
+      this._regAuthTries = 0;
+      this._sendRegister(3600);
+      this._armRegConfirm();
+    }, 5000);
+  }
+  _clearRegConfirm() { if (this._regConfirm) { clearTimeout(this._regConfirm); this._regConfirm = null; } this._refreshTries = 0; }
   _send(msg) {
     try {
       this.sock.send(Buffer.from(msg, 'utf8'), this.cfg.port || 5060, this.cfg.server);
@@ -241,6 +271,7 @@ class SipPhone extends EventEmitter {
   stop() {
     this.hangup();
     this._clearRegWatch();
+    this._clearRegConfirm();
     if (this.regTimer) clearInterval(this.regTimer);
     // Only un-REGISTER if we actually registered (not in outbound-only mode).
     if (this.registered && this.cfg.register !== false) this._sendRegister(0); // unregister
@@ -546,12 +577,17 @@ class SipPhone extends EventEmitter {
       if (/^\d+$/.test(eh)) granted = parseInt(eh, 10);
       else { const m = /expires=(\d+)/i.exec(msg.headers['contact'] || ''); if (m) granted = parseInt(m[1], 10); }
       if (!(granted > 0)) granted = 300;
-      // Refresh at 80% of the granted lifetime, floored low enough to beat a
-      // short expiry — ConnexCS sometimes grants ~20s, and a 30s floor would let
-      // the registration lapse between calls. Never below 10s.
-      const refreshMs = Math.max(10, Math.min(Math.floor(granted * 0.8), granted - 5)) * 1000;
+      // Refresh FAR below the granted lifetime so a lost REGISTER is not fatal.
+      // Previously this was 80% of the grant (~96s for a 120s grant) — only ~24s of
+      // margin, so a SINGLE dropped REGISTER on a lossy link let the binding lapse
+      // and the agent "went offline" / dropped out of routing. Cap the refresh at
+      // 25s: with a 120s server expiry that's ~4 tries before it could ever lapse,
+      // and the fast-retry below recovers a dropped one within seconds on top.
+      const refreshMs = Math.max(10, Math.min(Math.floor(granted * 0.8), granted - 5, 25)) * 1000;
+      this._refreshTries = 0;
+      if (this._regConfirm) { clearTimeout(this._regConfirm); this._regConfirm = null; }
       if (this.regTimer) clearInterval(this.regTimer);
-      this.regTimer = setInterval(() => this.register(), refreshMs);
+      this.regTimer = setInterval(() => this._refresh(), refreshMs);
       this.emit('status', 'registered (expires ' + granted + 's, refresh ' + Math.round(refreshMs / 1000) + 's)');
       return;
     }
