@@ -3,6 +3,7 @@ const path = require('path');
 const { exec, execFile } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const { SipPhone } = require('./native/sip-core.js'); // native UDP SIP/RTP softphone
 const { InboundPhone } = require('./native/inbound-core.js'); // inbound ACD leg (registers to our queue service)
 
@@ -21,6 +22,13 @@ app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
 // Don't leak the real IP over WebRTC when browsing behind the proxy (matches the
 // WebView2 browser's behaviour).
 app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
+
+// Windows 11 aggressively marks background/occluded windows as hidden and
+// suspends their rendering, which makes webContents.capturePage() come back BLACK
+// — so admin live-screen supervision never loads on some Win11 machines even
+// though it works elsewhere. Disabling the native occlusion calculation keeps the
+// window rendering so the monitoring capture always has real pixels.
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 
 // Absolute path to the preload injected into every embedded-browser page.
 // Enforces clipboard isolation before any page script runs.
@@ -43,6 +51,7 @@ let assignedProxy = null;
 
 // The signed-in session token, kept in the main process for monitoring calls.
 let currentToken = null;
+let currentUsername = null; // who's logged in, so a crash report names the user
 
 // Policy config (website lists + blocked/allowed apps) received at login.
 let currentPolicy = { blocklist: [], allowlist: [], blockedApps: [], allowedApps: [] };
@@ -429,16 +438,57 @@ function lockWebContents(wc) {
 // file AND the server portal log), and keep running — so the app survives and we
 // can see exactly what threw instead of guessing.
 let lastCrashReportAt = 0;
+function crashInfo(kind, msg) {
+  const safe = (fn) => { try { return fn(); } catch (_) { return ''; } };
+  return {
+    kind: String(kind || ''),
+    error: String(msg || '').slice(0, 16000),
+    version: safe(() => app.getVersion()),
+    platform: process.platform + ' ' + safe(() => os.release()),
+    hostname: safe(() => os.hostname()),
+    osUser: safe(() => os.userInfo().username),
+    appUser: currentUsername || '',
+    at: new Date().toISOString(),
+  };
+}
+// Send a crash report straight to the server over a token-free endpoint, so it
+// arrives even when the crash happened before login or killed the session.
+function postCrash(info) {
+  try {
+    fetch(API_BASE + '/clientlog.php', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(info),
+    }).catch(() => {});
+  } catch (_) {}
+}
 function logCrash(kind, err) {
   const msg = (err && (err.stack || err.message)) ? (err.stack || err.message) : String(err);
   try { console.error('[' + kind + ']', msg); } catch (_) {}
+  // Local backup copy — survives a hard crash that kills us before the POST flushes;
+  // it's uploaded on the next startup (flushPendingCrashes).
   try { fs.appendFileSync(path.join(app.getPath('userData'), 'portal-crash.log'),
         new Date().toISOString() + ' [' + kind + '] ' + msg + '\n'); } catch (_) {}
   const now = Date.now();
-  if (now - lastCrashReportAt > 3000) { lastCrashReportAt = now; try { logEvent('client_error', { kind, error: String(msg).slice(0, 3500) }); } catch (_) {} }
+  if (now - lastCrashReportAt < 2000) return; // throttle bursts
+  lastCrashReportAt = now;
+  postCrash(crashInfo(kind, msg));
 }
 process.on('uncaughtException', (err) => logCrash('uncaughtException', err));
 process.on('unhandledRejection', (reason) => logCrash('unhandledRejection', reason));
+// A GPU/utility child-process crash (a common cause of "the app just closed") —
+// JS try/catch can't see these, so report them here.
+try { app.on('child-process-gone', (_e, d) => logCrash('child-process-gone', (d && (d.type + '/' + d.reason + ' code=' + d.exitCode)) || 'unknown')); } catch (_) {}
+
+// On startup, upload any crash lines saved locally by a previous run that died
+// before its live report could flush — then clear the file so we don't resend.
+function flushPendingCrashes() {
+  try {
+    const p = path.join(app.getPath('userData'), 'portal-crash.log');
+    if (!fs.existsSync(p)) return;
+    const txt = fs.readFileSync(p, 'utf8');
+    if (txt && txt.trim()) postCrash(crashInfo('recovered-on-startup', txt.slice(-16000)));
+    fs.writeFileSync(p, ''); // clear after handing it off
+  } catch (_) {}
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -457,6 +507,7 @@ function createWindow() {
       webviewTag: true, // enables the embedded <webview> browser
       devTools: false,  // no DevTools on the portal chrome (would bypass locks)
       spellcheck: false,
+      backgroundThrottling: false, // keep rendering when backgrounded, so admin screen supervision never captures a frozen/black frame
     },
   });
 
@@ -896,14 +947,25 @@ let captureBusy = false;
 async function captureAndSend() {
   if (!supervising || captureBusy || !mainWindow || mainWindow.isDestroyed()) return;
   captureBusy = true;
+  // The portal window is screenshot/record-protected (setContentProtection). On
+  // Windows 11 that protection (WDA_EXCLUDEFROMCAPTURE) also blocks our OWN
+  // monitoring capture — capturePage() returns black and the admin's view never
+  // loads. Lift protection for just the instant of the capture, then immediately
+  // restore it, so agents stay protected while live supervision still works.
+  let lifted = false;
   try {
+    if (appliedWin.contentProtection) { try { mainWindow.setContentProtection(false); lifted = true; } catch (_) {} }
     const img = await mainWindow.webContents.capturePage();
+    if (lifted) { try { mainWindow.setContentProtection(true); lifted = false; } catch (_) {} } // restore ASAP, before the slow JPEG/POST
     const sz = img.getSize();
     const frame = (sz.width > 1366) ? img.resize({ width: 1366 }) : img;
     const jpeg = frame.toJPEG(42); // Buffer
     const res = await apiCall('supervise_frame.php', 'POST', { frame: jpeg.toString('base64') });
     if (res && res.watching === false) setSupervising(false); // admin stopped watching
-  } catch (_) { /* transient; next tick */ } finally { captureBusy = false; }
+  } catch (_) { /* transient; next tick */ } finally {
+    if (lifted && mainWindow && !mainWindow.isDestroyed()) { try { mainWindow.setContentProtection(true); } catch (_) {} } // never leave it off
+    captureBusy = false;
+  }
 }
 
 // Lightweight poll so capture starts within ~2s of an admin opening the viewer,
@@ -976,7 +1038,25 @@ function setSupervising(on) {
   }
 }
 
+// Single-instance lock: a second launch (double-click, an auto-update relaunch
+// race, or a Windows startup entry firing twice) must never spin up a second
+// kiosk window, a second SIP phone fighting for the same UDP ports (it would fail
+// with "address in use"), or a second app-blocker. Hand focus to the running
+// instance and make the duplicate exit.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus(); mainWindow.setFullScreen(true); } catch (_) {}
+    }
+  });
+}
+
 app.whenReady().then(async () => {
+  if (!app.hasSingleInstanceLock()) return; // this is a duplicate instance; it's already quitting
+  // Upload any crash a previous run saved locally but couldn't send before it died.
+  flushPendingCrashes();
   // Remove the application menu so its Edit roles (Copy / Paste / Cut /
   // Select All) and the View → Toggle DevTools accelerator can't be used to
   // move data in or out of the portal.
@@ -1166,6 +1246,7 @@ ipcMain.handle('auth:login', async (_event, { username, password }) => {
 
     // Keep the token for monitoring calls.
     currentToken = data.token;
+    currentUsername = data.username || data.email || (data.user && (data.user.username || data.user.email || data.user.full_name)) || username || null;
     isLoggedIn = true; // from here, updates follow the admin install-timing setting
 
     // Store policy + server flags and turn on enforcement.
@@ -1308,13 +1389,19 @@ let trainSharing = false, trainBusy = false, trainCapTimer = null, trainHbTimer 
 async function trainCaptureAndSend() {
   if (!trainSharing || trainBusy || !mainWindow || mainWindow.isDestroyed()) return;
   trainBusy = true;
+  let lifted = false; // lift screenshot-protection only for the capture (see captureAndSend) so Win11 doesn't return black
   try {
+    if (appliedWin.contentProtection) { try { mainWindow.setContentProtection(false); lifted = true; } catch (_) {} }
     const img = await mainWindow.webContents.capturePage();
+    if (lifted) { try { mainWindow.setContentProtection(true); lifted = false; } catch (_) {} }
     const sz = img.getSize();
     const frame = (sz.width > 1366) ? img.resize({ width: 1366 }) : img;
     const jpeg = frame.toJPEG(45);
     await apiCall('train_frame.php', 'POST', { frame: jpeg.toString('base64') });
-  } catch (_) { /* transient */ } finally { trainBusy = false; }
+  } catch (_) { /* transient */ } finally {
+    if (lifted && mainWindow && !mainWindow.isDestroyed()) { try { mainWindow.setContentProtection(true); } catch (_) {} }
+    trainBusy = false;
+  }
 }
 function startTrainLoops() {
   stopTrainLoops();
