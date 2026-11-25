@@ -1,3 +1,13 @@
+// Surface any uncaught renderer error to the server log instead of letting it
+// silently blank the UI — so a bad value in one user's data is visible and
+// fixable rather than a mystery crash.
+window.addEventListener('error', function (e) {
+  try { if (window.portal && window.portal.acdLog) window.portal.acdLog('renderer error: ' + (e && e.message) + ' @ ' + (e && e.filename) + ':' + (e && e.lineno), 'error'); } catch (_) {}
+});
+window.addEventListener('unhandledrejection', function (e) {
+  try { if (window.portal && window.portal.acdLog) window.portal.acdLog('renderer promise rejection: ' + (e && e.reason && (e.reason.stack || e.reason.message || e.reason)), 'error'); } catch (_) {}
+});
+
 // Show the app version everywhere it's displayed — the clearest proof an update
 // actually applied (the number changes after an update).
 (() => {
@@ -1194,7 +1204,7 @@ document.addEventListener('paste', (e) => {
   if (!window.portal || !window.portal.onSuperviseState) return;
   const el = document.createElement('div');
   el.id = 'supervise-banner';
-  // el.innerHTML = '<span class="sv-dot"></span><span class="sv-eye"></span> Supervisor is viewing your screen';
+  // el.innerHTML = '<span class="sv-dot"></span><span class="sv-eye">👁️</span> Supervisor is viewing your screen';
   el.style.cssText = [
     'position:fixed', 'top:0', 'left:50%', 'transform:translateX(-50%)',
     'z-index:500', 'display:none', 'align-items:center', 'gap:8px',

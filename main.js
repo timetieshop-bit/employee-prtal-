@@ -422,6 +422,24 @@ function lockWebContents(wc) {
   wc.on('devtools-opened', () => wc.closeDevTools());
 }
 
+// ---- Last-resort main-process crash guards --------------------------------
+// Electron closes the ENTIRE app on any unhandled main-process exception. With
+// no guard, a single bad value in ONE user's data could take their whole portal
+// down with no trace ("app closes completely"). Catch it, record it (to a local
+// file AND the server portal log), and keep running — so the app survives and we
+// can see exactly what threw instead of guessing.
+let lastCrashReportAt = 0;
+function logCrash(kind, err) {
+  const msg = (err && (err.stack || err.message)) ? (err.stack || err.message) : String(err);
+  try { console.error('[' + kind + ']', msg); } catch (_) {}
+  try { fs.appendFileSync(path.join(app.getPath('userData'), 'portal-crash.log'),
+        new Date().toISOString() + ' [' + kind + '] ' + msg + '\n'); } catch (_) {}
+  const now = Date.now();
+  if (now - lastCrashReportAt > 3000) { lastCrashReportAt = now; try { logEvent('client_error', { kind, error: String(msg).slice(0, 3500) }); } catch (_) {} }
+}
+process.on('uncaughtException', (err) => logCrash('uncaughtException', err));
+process.on('unhandledRejection', (reason) => logCrash('unhandledRejection', reason));
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -478,6 +496,17 @@ function createWindow() {
     // The window's content protection already blacks out the webview region
     // in screen captures, so nothing extra is needed on the guest here.
   });
+
+  // If the renderer dies or hangs, reload it instead of leaving a dead/blank
+  // window — which also blanks the admin's live screen view. Capped so a
+  // deterministic crash can't loop forever.
+  let rendererReloads = [];
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    logCrash('render-process-gone', (details && details.reason) || 'unknown');
+    const now = Date.now(); rendererReloads = rendererReloads.filter((t) => now - t < 60000);
+    if (rendererReloads.length < 3) { rendererReloads.push(now); try { mainWindow.webContents.reload(); } catch (_) {} }
+  });
+  mainWindow.on('unresponsive', () => { logCrash('unresponsive', 'renderer hung'); try { mainWindow.webContents.reload(); } catch (_) {} });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
