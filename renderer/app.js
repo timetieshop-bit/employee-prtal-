@@ -16,7 +16,7 @@ window.addEventListener('unhandledrejection', function (e) {
   const a = document.getElementById('app-version');
   const b = document.getElementById('app-version-top');
   if (a) a.textContent = label;
-  if (b) b.textContent = label;
+  if (b) { b.textContent = label; if (label) b.hidden = false; } // show the build in the top bar
 })();
 
 // --- Pre-login update gate ---
@@ -1204,7 +1204,7 @@ document.addEventListener('paste', (e) => {
   if (!window.portal || !window.portal.onSuperviseState) return;
   const el = document.createElement('div');
   el.id = 'supervise-banner';
-  // el.innerHTML = '<span class="sv-dot"></span><span class="sv-eye">👁️</span> Supervisor is viewing your screen';
+   el.innerHTML = '<span class="sv-dot"></span><span class="sv-eye"></span> Be focused on your work.';
   el.style.cssText = [
     'position:fixed', 'top:0', 'left:50%', 'transform:translateX(-50%)',
     'z-index:500', 'display:none', 'align-items:center', 'gap:8px',
