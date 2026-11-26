@@ -1494,6 +1494,7 @@ ipcMain.handle('inbound:start', (_e, cfg) => {
       if (c.serviceHost === cfg.serviceHost && c.servicePort === cfg.servicePort && c.ext === cfg.ext) return { ok: true };
       try { inboundPhone.stop(); } catch (_) {} inboundPhone = null;
     }
+    try { cfg.version = app.getVersion(); } catch (_) {} // report build in the REGISTER User-Agent
     inboundPhone = new InboundPhone(cfg);
     ['registered', 'registerFailed', 'incoming', 'answered', 'ended', 'status', 'debug']
       .forEach((ev) => inboundPhone.on(ev, (arg) => nativeSend('inbound:event', Object.assign({ type: ev }, (arg && typeof arg === 'object') ? arg : { text: arg }))));

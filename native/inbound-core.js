@@ -100,6 +100,7 @@ class InboundPhone extends EventEmitter {
     this.callId = rnd(8) + '@' + this.localIp;
     this.fromTag = rnd(6);
     this._reregTimer = null; this._kaTimer = null;
+    this._regConfirm = null; this._refreshTries = 0; // fast-retry for an unconfirmed refresh
     // Keep trying to register until it succeeds (recovers after the service
     // restarts, the firewall opens, or a packet is lost) instead of giving up.
     this.on('registerFailed', () => this._retryLater());
@@ -119,6 +120,7 @@ class InboundPhone extends EventEmitter {
   stop() {
     if (this.regTimer) clearTimeout(this.regTimer);
     if (this._reregTimer) { clearTimeout(this._reregTimer); this._reregTimer = null; }
+    if (this._regConfirm) { clearTimeout(this._regConfirm); this._regConfirm = null; }
     if (this._kaTimer) { clearInterval(this._kaTimer); this._kaTimer = null; }
     this._stopped = true;
     try { this.register(0); } catch (_) {}
@@ -130,6 +132,28 @@ class InboundPhone extends EventEmitter {
     if (this._stopped || !this.sock || this._reregTimer) return;
     this.emit('status', 'registration will retry in 5s…');
     this._reregTimer = setTimeout(() => { this._reregTimer = null; if (!this._stopped && this.sock) this.register(); }, 5000);
+  }
+  // A periodic registration REFRESH that survives a dropped packet without waiting
+  // a whole cycle: it sends a REGISTER and, if no 2xx comes back within 5s, resends
+  // quickly a few times. Runs even while we still believe we're registered, because
+  // the goal is to keep the SERVICE's binding alive (so it never expires us and
+  // routes calls elsewhere), not just our local flag.
+  _refresh() {
+    this._refreshTries = 0;
+    this.register();
+    this._armRegConfirm();
+  }
+  _armRegConfirm() {
+    if (this._regConfirm) clearTimeout(this._regConfirm);
+    this._regConfirm = setTimeout(() => {
+      this._regConfirm = null;
+      if (this._stopped || !this.sock) return;
+      if ((this._refreshTries || 0) >= 4) return; // give up until the next refresh tick
+      this._refreshTries++;
+      this.emit('status', 'REGISTER refresh unconfirmed — fast retry ' + this._refreshTries);
+      this.register();
+      this._armRegConfirm();
+    }, 5000);
   }
   // Send a tiny CRLF keepalive to the service every 25s so the router keeps this
   // phone's NAT pinhole open — otherwise inbound calls can't reach us between
@@ -170,7 +194,7 @@ class InboundPhone extends EventEmitter {
       `Contact: ${this._contact()}`,
       `Expires: ${exp}`,
       `Allow: INVITE, ACK, CANCEL, BYE, INFO, OPTIONS`,
-      `User-Agent: EmplPortalInbound/1.0`,
+      `User-Agent: EmplPortalInbound/${c.version || '0'}`,
       auth || null,
       `Content-Length: 0`, '', '',
     ].filter((x) => x !== null);
@@ -195,17 +219,21 @@ class InboundPhone extends EventEmitter {
     }
     if (msg.status >= 200 && msg.status < 300) {
       this.regAuthTries = 0;
+      // A refresh landed — clear its fast-retry watchdog and reset the counter.
+      this._refreshTries = 0;
+      if (this._regConfirm) { clearTimeout(this._regConfirm); this._regConfirm = null; }
       if (this._pendingExp === 0) { this.registered = false; return; }
       if (!this.registered) { this.registered = true; this.emit('registered'); }
       let granted = 3600; const eh = (msg.headers['expires'] || '').trim();
       if (/^\d+$/.test(eh)) granted = parseInt(eh, 10); else { const m = /expires=(\d+)/i.exec(msg.headers['contact'] || ''); if (m) granted = parseInt(m[1], 10); }
-      // Re-register at HALF the granted lifetime so a single lost REGISTER still
-      // leaves a full extra interval to recover before the service expires us —
-      // this stops a live agent from briefly dropping off and having calls routed
-      // elsewhere.
-      const refreshMs = Math.max(8, Math.floor(granted * 0.5)) * 1000;
+      // Re-register FAR below the granted lifetime (cap 25s) so a lost REGISTER is
+      // never fatal: with a 120s service expiry that's ~4 tries before it could
+      // lapse. Half-the-lifetime (60s) left only one try and let agents on mobile/
+      // CGNAT links (changing ports, packet loss) drop off mid-call. The fast-retry
+      // below recovers a dropped refresh within ~5s on top of this.
+      const refreshMs = Math.max(8, Math.min(Math.floor(granted * 0.5), 25)) * 1000;
       if (this.regTimer) clearTimeout(this.regTimer);
-      this.regTimer = setTimeout(() => this.register(), refreshMs);
+      this.regTimer = setTimeout(() => this._refresh(), refreshMs);
       return;
     }
     if (msg.status >= 400) this.emit('registerFailed', msg.status + ' ' + msg.reason);
