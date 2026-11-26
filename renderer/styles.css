@@ -1396,6 +1396,20 @@ html, body {
 .inb-cbtn span { font-size: 10px; color: var(--muted); }
 .inb-cbtn:hover { background: #e6e9ef; }
 .inb-cbtn.on { background: #e8f0fe; } .inb-cbtn.on span { color: #1a73e8; }
+/* Unmistakable active states for Hold / Mute */
+#inb-hold.on { background: #f59e0b; color: #fff; box-shadow: 0 0 0 3px rgba(245,158,11,.28); animation: inbPulse 1.4s ease-in-out infinite; }
+#inb-hold.on span { color: #fff; }
+#inb-mute.on { background: #dc2626; color: #fff; box-shadow: 0 0 0 3px rgba(220,38,38,.28); animation: inbPulse 1.4s ease-in-out infinite; }
+#inb-mute.on span { color: #fff; }
+@keyframes inbPulse { 0%,100% { box-shadow: 0 0 0 3px rgba(0,0,0,.0); } 50% { box-shadow: 0 0 0 5px rgba(0,0,0,.12); } }
+/* Status line under the timer */
+.inb-call-state { margin: 2px auto 0; display: inline-block; font-size: 12px; font-weight: 800; letter-spacing: .3px;
+  padding: 3px 12px; border-radius: 999px; text-transform: uppercase; }
+.inb-call-state.is-hold { background: #fff4e0; color: #b45309; border: 1px solid #f7cd7f; }
+.inb-call-state.is-mute { background: #fde8e8; color: #b91c1c; border: 1px solid #f3b4b4; }
+/* Tint the whole call card so the mode is obvious at a glance */
+.inb-oncall.hold { box-shadow: inset 0 0 0 2px #f59e0b; border-radius: 14px; }
+.inb-oncall.mute { box-shadow: inset 0 0 0 2px #dc2626; border-radius: 14px; }
 .inb-end { width: 100%; border: none; border-radius: 11px; padding: 12px 0; font-size: 14px; font-weight: 700; color: #fff; background: #d93025; cursor: pointer; }
 .inb-end:hover { background: #b3261e; }
 .inb-xfer-list { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; max-height: 150px; overflow: auto; }

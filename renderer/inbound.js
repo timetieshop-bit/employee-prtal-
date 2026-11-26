@@ -301,7 +301,7 @@
     if (onCall) recordRecent(onCall, (Date.now() - callStart) / 1000);
     try { window.InboundAudio && window.InboundAudio.setPcmTap(null); } catch (_) {}
     try { window.InboundAudio && window.InboundAudio.stop(); } catch (_) {}
-    try { if (window.TopCaptions) window.TopCaptions.callEnded(); } catch (_) {}
+    try { if (window.TopCaptions) window.TopCaptions.callEnded(inbCapTap); } catch (_) {}
     hideOnCall();
     log('call ended (' + (reason || '') + ')');
   }
@@ -343,6 +343,22 @@
     $('inb-hold').classList.toggle('on', holdOn);
     $('inb-hold').innerHTML = holdOn ? '▶<span>Resume</span>' : '⏸<span>Hold</span>';
     $('inb-mute').classList.toggle('on', muteOn);
+    $('inb-mute').innerHTML = muteOn ? '🔇<span>Unmute</span>' : '🎙<span>Mute</span>';
+    // Unmistakable status under the timer: On hold · Muted / On hold / Muted.
+    const st = $('inb-call-state');
+    if (st) {
+      const parts = [];
+      if (holdOn) parts.push('On hold');
+      if (muteOn) parts.push('Muted');
+      if (parts.length) {
+        st.textContent = parts.join(' · ');
+        st.className = 'inb-call-state' + (holdOn ? ' is-hold' : ' is-mute');
+        st.hidden = false;
+      } else { st.hidden = true; }
+    }
+    // Tint the whole call card so it's obvious at a glance which mode it's in.
+    const oc = $('inb-oncall');
+    if (oc) { oc.classList.toggle('hold', holdOn); oc.classList.toggle('mute', muteOn && !holdOn); }
   }
 
   // ---- transfer ----
@@ -395,8 +411,7 @@
       showOnCall({ caller: ev.caller, via: ev.via }, 0);
       playConnectTone(); // notify the agent a call just auto-connected
       try { window.InboundAudio && window.InboundAudio.start(); } catch (_) {}
-      try { if (window.TopCaptions) window.TopCaptions.callStarted(8000); } catch (_) {}
-      startCaptionTap();
+      try { if (window.TopCaptions) window.TopCaptions.callStarted(8000, inbCapTap); } catch (_) {}
       log('answered');
     } else if (ev.type === 'ended') {
       if (ev.reason === 'customer-hangup') toast('Customer hung up the call');
@@ -407,14 +422,13 @@
     else if (ev.type === 'debug') { log('· ' + (ev.text || '')); }
   });
 
-  // Feed the inbound audio to the global captions engine; it only transcribes
-  // when the global captions button is on (isEnabled()).
-  function startCaptionTap() {
-    try {
-      if (!window.InboundAudio) return;
-      window.InboundAudio.setPcmTap((i16) => { if (window.TopCaptions && window.TopCaptions.isEnabled && window.TopCaptions.isEnabled()) window.TopCaptions.pushExternal(i16); });
-    } catch (_) {}
-  }
+  // This call's caption tap — the unified controller starts/stops it when the
+  // inbound call is the one that owns captions (newest live call wins), so it
+  // coexists with an outbound consultation call without either clobbering the other.
+  const inbCapTap = {
+    start: () => { try { window.InboundAudio && window.InboundAudio.setPcmTap((i16) => { if (window.TopCaptions) window.TopCaptions.pushExternal(i16); }); } catch (_) {} },
+    stop:  () => { try { window.InboundAudio && window.InboundAudio.setPcmTap(null); } catch (_) {} },
+  };
 
   log('Inbound phone script ' + INBOUND_BUILD + ' loaded');
 })();

@@ -271,7 +271,7 @@
     if (activePeer) addRecent(activePeer, dur);
     inCall = false; muted = false; activePeer = '';
     stopTap();
-    if (window.TopCaptions) window.TopCaptions.callEnded();
+    if (window.TopCaptions) window.TopCaptions.callEnded(capTap);
     stopTimer();
     $('phone2-incall').hidden = true;
     const d = $('phone2-dtmf'); if (d) d.value = '';
@@ -310,7 +310,7 @@
     await ensureUA();
     if (!registered) { setStatus('Not ready yet'); return; }
     showCall(num, 'Calling…');
-    if (window.TopCaptions) window.TopCaptions.callStarted(8000);
+    if (window.TopCaptions) window.TopCaptions.callStarted(8000, capTap);
     try { await window.NativeAudio.start(); } catch (_) {}
     if (window.TopCaptions && window.TopCaptions.isEnabled && window.TopCaptions.isEnabled()) startTap();
     try { await window.portal.nativeCall(num, callerId || ''); } catch (e) { setStatus('Call failed'); endCall(); }
@@ -358,6 +358,7 @@
     wantTap = false;
     try { window.NativeAudio && window.NativeAudio.setPcmTap(null); } catch (_) {}
   }
+  const capTap = { start: startTap, stop: stopTap }; // this call's tap for the caption controller
 
   // ---------- wiring ----------
   btn.addEventListener('click', () => {

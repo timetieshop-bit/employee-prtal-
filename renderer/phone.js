@@ -234,7 +234,7 @@
   function teardown() {
     if (timerInt) { clearInterval(timerInt); timerInt = null; }
     stopTap();
-    if (window.TopCaptions) window.TopCaptions.callEnded();
+    if (window.TopCaptions) window.TopCaptions.callEnded(capTap);
     if (nativeStarted) { try { window.NativeAudio && window.NativeAudio.stop(); } catch (_) {} try { window.portal.nativeStop(); } catch (_) {} nativeStarted = false; }
     if (session) { try { session.terminate(); } catch (_) {} session = null; }
     if (ua) { try { ua.stop(); } catch (_) {} ua = null; }
@@ -279,7 +279,7 @@
     if (activePeer) addRecent(activePeer, dur);
     inCall = false; muted = false; held = false; session = null; remoteStream = null; activePeer = '';
     stopTap();
-    if (window.TopCaptions) window.TopCaptions.callEnded();
+    if (window.TopCaptions) window.TopCaptions.callEnded(capTap);
     stopTimer();
     $('phone-incall').hidden = true;
     const d = $('phone-dtmf'); if (d) d.value = '';
@@ -319,7 +319,7 @@
       await ensureUA();
       if (!registered) { setStatus('Not registered yet'); return; }
       showCall(num, 'Calling…');
-      if (window.TopCaptions) window.TopCaptions.callStarted(8000);
+      if (window.TopCaptions) window.TopCaptions.callStarted(8000, capTap);
       try { await window.NativeAudio.start(); } catch (_) {}
       try { await window.portal.nativeCall(num); } catch (e) { setStatus('Call failed'); endCall(); }
       return;
@@ -329,7 +329,7 @@
     if (!registered) { setStatus('Not registered yet'); return; }
     try {
       showCall(num, 'Calling…');
-      if (window.TopCaptions) window.TopCaptions.callStarted(16000);
+      if (window.TopCaptions) window.TopCaptions.callStarted(16000, capTap);
       const extraHeaders = [];
       if (callerId) {
         const cc = callerId.replace(/[^\d+*#]/g, '');
@@ -483,9 +483,12 @@
     try { capSrc && capSrc.disconnect(); } catch (_) {} capSrc = null;
     try { capCtx && capCtx.close(); } catch (_) {} capCtx = null;
   }
+  // This outbound call's caption tap; passed to the controller so it can focus
+  // captions on this call even when an inbound call is already live.
+  const capTap = { start: startTap, stop: stopTap };
   // Let the unified caption controller start/stop our audio capture on demand.
   if (window.TopCaptions && window.TopCaptions.registerPhone) {
-    window.TopCaptions.registerPhone({ startTap, stopTap });
+    window.TopCaptions.registerPhone(capTap);
   }
 
   // ---------- wiring ----------

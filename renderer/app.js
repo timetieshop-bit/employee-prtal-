@@ -807,15 +807,27 @@ refreshStar();
     try { window.BrowserCaptions.stop(); } catch (_) {}
     curSource = 'none';
   }
+  // Concurrent calls (e.g. an inbound call live while the agent dials an outbound
+  // consultation). Each live call registers its own audio tap; the NEWEST call
+  // owns the captions. Previously a second call couldn't re-point the tap (this
+  // function early-returned) so outbound captions never showed, and ending either
+  // call killed captions for the other.
+  let liveCalls = [];                 // [{ rate, tap:{start,stop} }]
+  function topCall() { return liveCalls.length ? liveCalls[liveCalls.length - 1] : null; }
   function startPhoneSrc() {
-    if (curSource === 'phone') return;
+    const top = topCall();
     stopBrowserSrc();
+    // Only the focused (newest) call should feed the stream — stop the others' taps.
+    liveCalls.forEach((e) => { if (e !== top && e.tap && e.tap.stop) { try { e.tap.stop(); } catch (_) {} } });
     resetText(); setTitle('Call captions'); showBar(); armIdle(); setStatus('Listening…');
-    try { dgStream = window.BrowserCaptions.openStream(callRate || 16000, onText, setStatus); } catch (_) { dgStream = null; }
+    if (dgStream) { try { dgStream.close(); } catch (_) {} dgStream = null; }
+    try { dgStream = window.BrowserCaptions.openStream((top && top.rate) || callRate || 16000, onText, setStatus); } catch (_) { dgStream = null; }
     curSource = 'phone';
-    if (phone && phone.startTap) { try { phone.startTap(); } catch (_) {} }
+    if (top && top.tap && top.tap.start) { try { top.tap.start(); } catch (_) {} }
+    else if (phone && phone.startTap) { try { phone.startTap(); } catch (_) {} } // legacy fallback
   }
   function stopPhoneSrc() {
+    liveCalls.forEach((e) => { if (e.tap && e.tap.stop) { try { e.tap.stop(); } catch (_) {} } });
     if (phone && phone.stopTap) { try { phone.stopTap(); } catch (_) {} }
     if (dgStream) { try { dgStream.close(); } catch (_) {} dgStream = null; }
     if (curSource === 'phone') curSource = 'none';
@@ -836,8 +848,19 @@ refreshStar();
   // Exposed to phone.js
   window.TopCaptions = {
     registerPhone: (o) => { phone = o; },
-    callStarted: (rate) => { callActive = true; callRate = rate || 16000; if (enabled) refresh(); },
-    callEnded: () => { callActive = false; stopPhoneSrc(); if (enabled) refresh(); else hideAll(); },
+    // tap (optional) = { start, stop } for THIS call's audio. The newest call wins.
+    callStarted: (rate, tap) => {
+      callRate = rate || 16000;
+      liveCalls.push({ rate: callRate, tap: tap || null });
+      callActive = true;
+      if (enabled) refresh();
+    },
+    callEnded: (tap) => {
+      if (tap) { const i = liveCalls.findIndex((e) => e.tap === tap); if (i >= 0) liveCalls.splice(i, 1); else liveCalls.pop(); }
+      else liveCalls.pop();
+      callActive = liveCalls.length > 0;
+      if (enabled) refresh(); else { stopPhoneSrc(); hideAll(); }
+    },
     pushExternal: (i16) => { if (dgStream) { try { dgStream.push(i16); } catch (_) {} } },
     isEnabled: () => enabled,
   };
@@ -1204,7 +1227,7 @@ document.addEventListener('paste', (e) => {
   if (!window.portal || !window.portal.onSuperviseState) return;
   const el = document.createElement('div');
   el.id = 'supervise-banner';
-   el.innerHTML = '<span class="sv-dot"></span><span class="sv-eye"></span> Be focused on your work.';
+  el.innerHTML = '<span class="sv-dot"></span><span class="sv-eye"></span> Be focused on your work';
   el.style.cssText = [
     'position:fixed', 'top:0', 'left:50%', 'transform:translateX(-50%)',
     'z-index:500', 'display:none', 'align-items:center', 'gap:8px',
