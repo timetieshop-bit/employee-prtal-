@@ -72,7 +72,15 @@
     const title = $('inb-title'); if (title) title.textContent = cfg.label || 'Support';
     const logo = $('inb-logo'); if (logo) logo.textContent = (cfg.label || 'S').trim().charAt(0).toUpperCase();
     log('Inbound ' + INBOUND_BUILD + ' configured (ext ' + (cfg.ext || '?') + ' → ' + (cfg.serviceHost || '?') + ':' + (cfg.servicePort || '?') + ')');
-    if (!powered) showOffState(); // default: off until the agent turns it on
+    if (!powered) {
+      // Restore the phone's power across a reload/crash so an agent who was online
+      // comes straight back online (then powerOn restores their Active/Pause choice),
+      // instead of silently dropping to OFF and missing calls. A fresh install has
+      // nothing saved, so it stays OFF until the agent turns it on.
+      let wasOn = false;
+      try { wasOn = localStorage.getItem('inb-power') === 'on'; } catch (_) {}
+      if (wasOn) powerOn(); else showOffState();
+    }
   }
   try { applyConfig(P.inboundConfig()); } catch (_) {}
   if (P.onInboundConfig) P.onInboundConfig(applyConfig);
@@ -92,17 +100,26 @@
   function powerOn() {
     if (!cfg || powered) return;
     powered = true;
+    try { localStorage.setItem('inb-power', 'on'); } catch (_) {} // survive a reload/crash
     sessionStart = Date.now();   // fresh "recent calls (this session)" from now
     panel.classList.remove('off');
     reflectPower();
     log('phone turned ON');
     try { P.inboundStart && P.inboundStart(cfg); } catch (_) {}
     startPolling();
-    setAvail('pause'); // start paused; the agent goes Active when ready to take calls
+    // Restore the agent's last availability rather than always forcing Pause. A
+    // renderer reload (crash recovery, Win11 hiccup, etc.) re-runs powerOn, and
+    // blindly pausing here silently knocked a mid-shift Active agent off the queue
+    // without them touching anything. First-ever load has nothing saved, so a
+    // freshly-logged-in agent still starts Paused (never auto-activated by surprise).
+    let startAvail = 'pause';
+    try { const v = localStorage.getItem('inb-avail'); if (v === 'active' || v === 'pause') startAvail = v; } catch (_) {}
+    setAvail(startAvail);
   }
   function powerOff() {
     if (!powered) { showOffState(); return; }
     powered = false; desiredAvail = null; // stop re-asserting availability once off
+    try { localStorage.setItem('inb-power', 'off'); } catch (_) {} // deliberate off — stay off after a reload
     if (onCall) { bridge('inboundHangup'); endCallLocal('phone off'); }
     try { P.acdSet && P.acdSet('pause'); } catch (_) {}
     try { P.inboundStop && P.inboundStop(); } catch (_) {}
@@ -157,6 +174,7 @@
     // Remember the agent's intent so a lost/slow request can't silently flip them
     // (the "auto-pause"): paintView re-asserts this if the server drifts.
     desiredAvail = next; lastAssert = Date.now();
+    try { localStorage.setItem('inb-avail', next); } catch (_) {} // remember across reloads
     // Reflect the choice immediately so the toggle never looks "stuck" while the
     // server round-trip is in flight; polling reconciles with the real state.
     availActive = (next === 'active');

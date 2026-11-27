@@ -100,7 +100,7 @@ class InboundPhone extends EventEmitter {
     this.callId = rnd(8) + '@' + this.localIp;
     this.fromTag = rnd(6);
     this._reregTimer = null; this._kaTimer = null;
-    this._regConfirm = null; this._refreshTries = 0; // fast-retry for an unconfirmed refresh
+    this._regConfirm = null; this._refreshTries = 0; this._refreshMs = 15000; // fast-retry for an unconfirmed refresh
     // Keep trying to register until it succeeds (recovers after the service
     // restarts, the firewall opens, or a packet is lost) instead of giving up.
     this.on('registerFailed', () => this._retryLater());
@@ -148,7 +148,17 @@ class InboundPhone extends EventEmitter {
     this._regConfirm = setTimeout(() => {
       this._regConfirm = null;
       if (this._stopped || !this.sock) return;
-      if ((this._refreshTries || 0) >= 4) return; // give up until the next refresh tick
+      if ((this._refreshTries || 0) >= 4) {
+        // Still no reply after several fast retries — the link is likely down. DO
+        // NOT stop: the refresh loop only re-arms on a successful 2xx, so bailing
+        // here left the phone "on" but PERMANENTLY offline (no more REGISTERs sent)
+        // until an app restart — even after the connection came back. Keep a
+        // heartbeat going so we re-register the instant the link returns.
+        this.emit('status', 'registration unreachable — will keep retrying');
+        if (this.regTimer) clearTimeout(this.regTimer);
+        this.regTimer = setTimeout(() => this._refresh(), this._refreshMs || 15000);
+        return;
+      }
       this._refreshTries++;
       this.emit('status', 'REGISTER refresh unconfirmed — fast retry ' + this._refreshTries);
       this.register();
@@ -232,6 +242,7 @@ class InboundPhone extends EventEmitter {
       // CGNAT links (changing ports, packet loss) drop off mid-call. The fast-retry
       // below recovers a dropped refresh within ~5s on top of this.
       const refreshMs = Math.max(8, Math.min(Math.floor(granted * 0.5), 25)) * 1000;
+      this._refreshMs = refreshMs; // remembered so the heartbeat can keep going even when a refresh fails
       if (this.regTimer) clearTimeout(this.regTimer);
       this.regTimer = setTimeout(() => this._refresh(), refreshMs);
       return;

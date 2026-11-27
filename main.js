@@ -266,12 +266,20 @@ async function apiCall(path, method = 'POST', payload = null) {
   const headers = {};
   if (currentToken) headers['X-Auth-Token'] = currentToken;
   if (payload) headers['Content-Type'] = 'application/json';
-  const res = await fetch(`${API_BASE}/${path}`, {
-    method,
-    headers,
-    body: payload ? JSON.stringify(payload) : undefined,
-  });
-  return res.json().catch(() => ({}));
+  try {
+    const res = await fetch(`${API_BASE}/${path}`, {
+      method,
+      headers,
+      body: payload ? JSON.stringify(payload) : undefined,
+    });
+    return res.json().catch(() => ({}));
+  } catch (_) {
+    // Network error (e.g. ERR_CONNECTION_RESET on a flaky agent link). Never let it
+    // bubble up as an unhandled rejection — that was tripping the crash handler and
+    // destabilizing the app on poor connections. Callers treat {} as "no data" and
+    // simply retry on the next poll.
+    return {};
+  }
 }
 
 // Normalize a site list to bare lower-case domains (drop scheme/path/www).
