@@ -41,7 +41,18 @@ function parseSdp(body) {
 }
 
 class Rtp {
-  constructor(localIp) { this.localIp = localIp; this.sock = null; this.localPort = 0; this.remoteIp = null; this.remotePort = 0; this.payload = 0; this.seq = Math.floor(Math.random() * 65535); this.ts = Math.floor(Math.random() * 2 ** 31); this.ssrc = Math.floor(Math.random() * 2 ** 31); this.txQueue = []; this.txTimer = null; this.muted = false; this.onPcm = null; }
+  constructor(localIp) { this.localIp = localIp; this.sock = null; this.localPort = 0; this.remoteIp = null; this.remotePort = 0; this.payload = 0; this.seq = Math.floor(Math.random() * 65535); this.ts = Math.floor(Math.random() * 2 ** 31); this.ssrc = Math.floor(Math.random() * 2 ** 31); this.txQueue = []; this.txTimer = null; this.muted = false; this.onPcm = null;
+    // Receive-side RTP resequencing. Incoming packets are keyed by their 16-bit
+    // sequence number and released to the decoder strictly IN ORDER — home Wi-Fi /
+    // consumer routers reorder and duplicate UDP constantly, and playing packets in
+    // arrival order (as we used to) scrambles the audio into distortion even when
+    // nothing is actually lost. Duplicates are dropped; a truly missing packet is
+    // concealed with one 20 ms silence frame once RX_WIN packets have piled up
+    // behind the gap, so a single loss can't stall the stream.
+    this.rxMap = new Map();   // seq -> payload Buffer (copied out of the socket buffer)
+    this.rxNext = -1;         // next seq to release; -1 until the first packet seen
+    this.RX_WIN = 4;          // reorder depth (~80 ms) before a gap is treated as lost
+  }
   open(cb) {
     this.sock = dgram.createSocket('udp4'); this.sock.on('error', () => {});
     this.sock.on('message', (b, r) => this._recv(b, r));
@@ -82,11 +93,40 @@ class Rtp {
   _recv(buf, rinfo) {
     if (buf.length < 12) return;
     if (rinfo && rinfo.address && (this.remoteIp !== rinfo.address || this.remotePort !== rinfo.port)) { this.remoteIp = rinfo.address; this.remotePort = rinfo.port; }
-    const pt = buf[1] & 0x7f; const pl = buf.subarray(12); let pcm;
-    if (pt === 8) pcm = g711.decodeAlaw(pl); else if (pt === 0) pcm = g711.decodeUlaw(pl); else return;
-    if (this.onPcm) this.onPcm(pcm);
+    const pt = buf[1] & 0x7f;
+    if (pt !== 0 && pt !== 8) return;                 // only G.711 media (skip DTMF/telephone-event etc.)
+    const seq = buf.readUInt16BE(2);
+    const pl = Buffer.from(buf.subarray(12));         // copy: Node reuses the socket buffer after this returns
+    if (this.rxNext < 0) this.rxNext = seq;           // first packet seen → start playout here
+    const ahead = (seq - this.rxNext) & 0xffff;
+    if (ahead >= 0x8000) return;                      // seq is behind the playout point → late or duplicate, drop
+    if (ahead > 1000) { this.rxMap.clear(); this.rxNext = seq; } // huge forward jump (SSRC reset / long gap) → resync
+    if (this.rxMap.has(seq)) return;                  // duplicate
+    this.rxMap.set(seq, { pt, pl });
+    this._drainRx();
   }
-  close() { if (this.txTimer) { clearInterval(this.txTimer); this.txTimer = null; } try { this.sock && this.sock.close(); } catch (_) {} this.sock = null; this.remoteIp = null; this.txQueue = []; }
+  _drainRx() {
+    for (;;) {
+      const cur = this.rxMap.get(this.rxNext);
+      if (cur) {
+        this.rxMap.delete(this.rxNext);
+        this._emitPcm(cur.pt === 8 ? g711.decodeAlaw(cur.pl) : g711.decodeUlaw(cur.pl));
+        this.rxNext = (this.rxNext + 1) & 0xffff;
+        continue;
+      }
+      // The next expected packet isn't here yet. If enough packets have queued up
+      // behind the gap, it's genuinely lost (or too late to use) — conceal it with
+      // one silence frame and move on so a single loss can't stall the stream.
+      if (this.rxMap.size > this.RX_WIN) {
+        this._emitPcm(new Int16Array(160));           // 20 ms @ 8k silence (loss concealment)
+        this.rxNext = (this.rxNext + 1) & 0xffff;
+        continue;
+      }
+      break; // wait a moment for the out-of-order packet to arrive
+    }
+  }
+  _emitPcm(pcm) { if (this.onPcm && pcm) this.onPcm(pcm); }
+  close() { if (this.txTimer) { clearInterval(this.txTimer); this.txTimer = null; } try { this.sock && this.sock.close(); } catch (_) {} this.sock = null; this.remoteIp = null; this.txQueue = []; this.rxMap.clear(); this.rxNext = -1; }
 }
 
 // cfg: { serviceHost, servicePort, realm, ext, secret, displayName }
