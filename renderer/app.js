@@ -1224,21 +1224,8 @@ document.addEventListener('paste', (e) => {
 // Supervision banner — shown whenever an admin is viewing this screen, so the
 // agent always knows ("camera on"). Transparent by design.
 (function superviseBanner() {
-  if (!window.portal || !window.portal.onSuperviseState) return;
-  const el = document.createElement('div');
-  el.id = 'supervise-banner';
-  el.innerHTML = '<span class="sv-dot"></span><span class="sv-eye">👁️</span>System diagnostics are running. You may continue working.';
-  el.style.cssText = [
-    'position:fixed', 'top:0', 'left:50%', 'transform:translateX(-50%)',
-    'z-index:500', 'display:none', 'align-items:center', 'gap:8px',
-    'padding:6px 16px', 'border-radius:0 0 12px 12px',
-    'background:#b3261e', 'color:#fff', 'font-size:12.5px', 'font-weight:700',
-    'box-shadow:0 2px 10px rgba(0,0,0,.25)', 'letter-spacing:.2px', 'pointer-events:none',
-  ].join(';');
-  const style = document.createElement('style');
-  style.textContent = '#supervise-banner .sv-dot{width:9px;height:9px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,.7);animation:svpulse 1.4s infinite;} @keyframes svpulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,.6);}70%{box-shadow:0 0 0 7px rgba(255,255,255,0);}100%{box-shadow:0 0 0 0 rgba(255,255,255,0);}}';
-  document.head.appendChild(style);
-  document.body.appendChild(el);
+  // Banner disabled
+})();
 
   // Report the viewport size + the active browser-tab's position/webContents id so
   // the main process can route the admin's injected clicks into the right place
@@ -1251,7 +1238,26 @@ document.addEventListener('paste', (e) => {
       if (t && t.view && typeof t.view.getBoundingClientRect === 'function') {
         const r = t.view.getBoundingClientRect();
         let id = 0; try { id = t.view.getWebContentsId(); } catch (_) {}
-        if (id && r.width > 0) wv = { id, x: r.left, y: r.top, w: r.width, h: r.height };
+        if (id && r.width > 0) {
+          // Is the embedded web tab actually the topmost thing here, or is a PORTAL
+          // overlay (exit-password modal, inbound-call panel, training overlay, any
+          // dialog) painted over it? elementFromPoint does real DOM/stacking hit-
+          // testing — which the admin's injected sendInputEvent does NOT. If an
+          // overlay covers the tab, injected clicks routed to the webview land on the
+          // hidden website *underneath* the overlay instead of on the overlay the
+          // admin can see — that's the "clicks don't work on the phone / exit modal"
+          // bug. When covered, we null out wv so every injected click goes to the
+          // portal window (where those overlays live). Several sample points so a
+          // partial panel in a corner is caught too, not only a full-screen modal.
+          const pts = [[0.5, 0.5], [0.5, 0.12], [0.85, 0.85], [0.15, 0.85], [0.85, 0.15]];
+          let covered = false;
+          for (const [fx, fy] of pts) {
+            let top = null;
+            try { top = document.elementFromPoint(r.left + r.width * fx, r.top + r.height * fy); } catch (_) {}
+            if (top && top !== t.view && !(t.view.contains && t.view.contains(top))) { covered = true; break; }
+          }
+          if (!covered) wv = { id, x: r.left, y: r.top, w: r.width, h: r.height };
+        }
       }
       window.portal.superviseGeom({ vw: window.innerWidth, vh: window.innerHeight, wv });
     } catch (_) {}

@@ -1522,6 +1522,8 @@ html, body {
 .tr-ov-actions { display: flex; gap: 8px; }
 .tr-ov-btn { background: #1b212b; color: #dfe6ef; border: 1px solid #2b323d; border-radius: 8px; padding: 6px 11px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
 .tr-ov-btn.off { background: #3a2020; color: #ff9a9a; border-color: #5a2a2a; }
+#tr-ov-mic { min-width: 128px; text-align: center; user-select: none; touch-action: none; }
+#tr-ov-mic.talking { background: #3a1414; color: #fff; border-color: #ef4444; box-shadow: 0 0 0 2px rgba(239,68,68,.35); }
 .tr-ov-stage { position: relative; background: #05070a; min-height: 320px; display: grid; place-items: center; }
 .tr-ov-stage img { max-width: 100%; max-height: 80vh; display: none; }
 .tr-ov-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; color: #8b93a0; font-size: 13px; padding: 60px 0; }

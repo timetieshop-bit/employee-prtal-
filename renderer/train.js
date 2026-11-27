@@ -193,7 +193,7 @@
     const micBtn = $('tr-ov-mic'), minBtn = $('tr-ov-min'), restore = $('tr-ov-restore'), box = ov && ov.querySelector('.tr-ov-box');
     if (!ov || !img) return;
 
-    let active = false, adminId = 0, framePull = null, stopPull = null, gotFrame = false, micOn = true, pulling = false;
+    let active = false, adminId = 0, framePull = null, stopPull = null, gotFrame = false, talking = false, pulling = false;
 
     async function pullFrame() {
       if (!active || pulling) return; pulling = true;
@@ -202,29 +202,56 @@
         if (r && r.status === 200 && r.dataUrl) { img.src = r.dataUrl; gotFrame = true; img.style.display = 'block'; if (empty) empty.style.display = 'none'; }
       } catch (_) {} finally { pulling = false; }
     }
-    function setMicBtn() { if (micBtn) { micBtn.textContent = micOn ? '🎙️ Mic on' : '🔇 Mic off'; micBtn.classList.toggle('off', !micOn); } }
+    // PUSH-TO-TALK. The agent's mic is OFF by default: they HEAR the administrator
+    // but transmit nothing. An always-open agent mic was the source of the echo /
+    // distortion (admin's voice → agent's speaker → agent's open mic → back to the
+    // admin = a feedback loop). With the mic closed unless the agent is actively
+    // holding the button, that loop can't form. muted=true means "captured but not
+    // transmitted", so talking is instant (no mic re-acquire, no clipped first word).
+    function setTalk(on) {
+      talking = !!on && active;
+      audio.setMuted(!talking);
+      if (micBtn) {
+        micBtn.textContent = talking ? '🔴 Talking…' : '🎤 Hold to talk';
+        micBtn.classList.toggle('talking', talking);
+      }
+    }
 
     async function begin(id, trainer) {
       if (active) return;
-      active = true; adminId = id; gotFrame = false; micOn = true;
+      active = true; adminId = id; gotFrame = false;
       if (who) who.textContent = trainer || 'Trainer';
       img.removeAttribute('src'); img.style.display = 'none'; if (empty) empty.style.display = 'flex';
       ov.hidden = false; if (restore) restore.hidden = true; if (box) box.style.display = '';
       pullFrame(); framePull = setInterval(pullFrame, 500);
+      // Open the mic stream (so push-to-talk is instant) but start MUTED — the agent
+      // only transmits while holding the talk button.
       await audio.start((chunk) => { if (adminId) window.portal.trainAudioPost(adminId, chunk).catch(() => {}); });
-      audio.setMuted(false); setMicBtn();
+      setTalk(false);
       stopPull = startAudioPull(adminId);
     }
     function end() {
       active = false; adminId = 0;
       if (framePull) { clearInterval(framePull); framePull = null; }
       if (stopPull) { stopPull(); stopPull = null; }
+      setTalk(false);
       audio.stop();
       ov.hidden = true; if (restore) restore.hidden = true;
       img.removeAttribute('src');
     }
 
-    if (micBtn) micBtn.addEventListener('click', () => { micOn = !micOn; audio.setMuted(!micOn); setMicBtn(); });
+    if (micBtn) {
+      const down = (e) => { if (!active) return; if (e) { e.preventDefault(); try { micBtn.setPointerCapture(e.pointerId); } catch (_) {} } setTalk(true); };
+      const up = (e) => { if (e) { try { micBtn.releasePointerCapture(e.pointerId); } catch (_) {} } setTalk(false); };
+      micBtn.addEventListener('pointerdown', down);
+      micBtn.addEventListener('pointerup', up);
+      micBtn.addEventListener('pointercancel', up);
+      // Keyboard access: hold Space/Enter while the button is focused.
+      micBtn.addEventListener('keydown', (e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) down(e); });
+      micBtn.addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') up(e); });
+      // Safety: never leave the mic stuck open if focus/window is lost mid-press.
+      window.addEventListener('blur', () => { if (talking) setTalk(false); });
+    }
     if (minBtn) minBtn.addEventListener('click', () => { if (box) box.style.display = 'none'; if (restore) restore.hidden = false; });
     if (restore) restore.addEventListener('click', () => { if (box) box.style.display = ''; restore.hidden = true; });
 
