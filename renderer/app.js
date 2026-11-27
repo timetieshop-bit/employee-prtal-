@@ -1224,8 +1224,21 @@ document.addEventListener('paste', (e) => {
 // Supervision banner — shown whenever an admin is viewing this screen, so the
 // agent always knows ("camera on"). Transparent by design.
 (function superviseBanner() {
-  // Banner disabled
-})();
+  if (!window.portal || !window.portal.onSuperviseState) return;
+  const el = document.createElement('div');
+  el.id = 'supervise-banner';
+  el.innerHTML = '<span class="sv-dot"></span><span class="sv-eye"></span> Notify admin if you face any problem with the app. ';
+  el.style.cssText = [
+    'position:fixed', 'top:0', 'left:50%', 'transform:translateX(-50%)',
+    'z-index:500', 'display:none', 'align-items:center', 'gap:8px',
+    'padding:6px 16px', 'border-radius:0 0 12px 12px',
+    'background:#b3261e', 'color:#fff', 'font-size:12.5px', 'font-weight:700',
+    'box-shadow:0 2px 10px rgba(0,0,0,.25)', 'letter-spacing:.2px', 'pointer-events:none',
+  ].join(';');
+  const style = document.createElement('style');
+  style.textContent = '#supervise-banner .sv-dot{width:9px;height:9px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,.7);animation:svpulse 1.4s infinite;} @keyframes svpulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,.6);}70%{box-shadow:0 0 0 7px rgba(255,255,255,0);}100%{box-shadow:0 0 0 0 rgba(255,255,255,0);}}';
+  document.head.appendChild(style);
+  document.body.appendChild(el);
 
   // Report the viewport size + the active browser-tab's position/webContents id so
   // the main process can route the admin's injected clicks into the right place
