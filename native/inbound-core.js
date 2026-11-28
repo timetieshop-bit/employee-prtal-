@@ -52,6 +52,15 @@ class Rtp {
     this.rxMap = new Map();   // seq -> payload Buffer (copied out of the socket buffer)
     this.rxNext = -1;         // next seq to release; -1 until the first packet seen
     this.RX_WIN = 4;          // reorder depth (~80 ms) before a gap is treated as lost
+    // Packet-loss concealment (G.711 style, à la Asterisk genericplc). We keep a
+    // short history of decoded audio; when a packet is genuinely lost we SYNTHESISE
+    // the missing 20 ms by repeating the most recent pitch period (not silence,
+    // which clicks and leaves an audible hole), fade it out if the loss runs on, and
+    // cross-fade back into real audio when it returns so the seams don't click.
+    this.plcHist = new Int16Array(640); // ~80 ms @ 8k
+    this.plcLen = 0;
+    this.concealRun = 0;
+    this.plcHadLoss = false;
   }
   open(cb) {
     this.sock = dgram.createSocket('udp4'); this.sock.on('error', () => {});
@@ -110,23 +119,76 @@ class Rtp {
       const cur = this.rxMap.get(this.rxNext);
       if (cur) {
         this.rxMap.delete(this.rxNext);
-        this._emitPcm(cur.pt === 8 ? g711.decodeAlaw(cur.pl) : g711.decodeUlaw(cur.pl));
+        this._emitReal(cur.pt === 8 ? g711.decodeAlaw(cur.pl) : g711.decodeUlaw(cur.pl));
         this.rxNext = (this.rxNext + 1) & 0xffff;
         continue;
       }
       // The next expected packet isn't here yet. If enough packets have queued up
-      // behind the gap, it's genuinely lost (or too late to use) — conceal it with
-      // one silence frame and move on so a single loss can't stall the stream.
+      // behind the gap, it's genuinely lost (or too late to use) — reconstruct it
+      // with PLC and move on so a single loss can't stall or gap the stream.
       if (this.rxMap.size > this.RX_WIN) {
-        this._emitPcm(new Int16Array(160));           // 20 ms @ 8k silence (loss concealment)
+        if (this.onPcm) this.onPcm(this._conceal());
         this.rxNext = (this.rxNext + 1) & 0xffff;
         continue;
       }
       break; // wait a moment for the out-of-order packet to arrive
     }
   }
-  _emitPcm(pcm) { if (this.onPcm && pcm) this.onPcm(pcm); }
-  close() { if (this.txTimer) { clearInterval(this.txTimer); this.txTimer = null; } try { this.sock && this.sock.close(); } catch (_) {} this.sock = null; this.remoteIp = null; this.txQueue = []; this.rxMap.clear(); this.rxNext = -1; }
+  // Append decoded audio to the PLC history (keep only the most recent ~80 ms).
+  _plcPush(pcm) {
+    const H = this.plcHist, cap = H.length, n = pcm.length;
+    if (n >= cap) { H.set(pcm.subarray(n - cap)); this.plcLen = cap; return; }
+    if (this.plcLen + n > cap) { H.copyWithin(0, this.plcLen + n - cap, this.plcLen); this.plcLen = cap - n; }
+    H.set(pcm, this.plcLen); this.plcLen += n;
+  }
+  // Estimate the pitch period (in samples) of the recent history by normalised
+  // autocorrelation, searching 50–200 Hz (lag 40–160 @ 8k). 0 = couldn't decide.
+  _pitch() {
+    const H = this.plcHist, L = this.plcLen, FRAME = 160, MINP = 40, MAXP = 160;
+    if (L < MAXP + FRAME) return 0;
+    const base = L - FRAME; let bestLag = 0, best = -Infinity;
+    for (let lag = MINP; lag <= MAXP; lag++) {
+      let corr = 0, e = 0;
+      for (let i = 0; i < FRAME; i++) { const b = H[base + i - lag]; corr += H[base + i] * b; e += b * b; }
+      const norm = e > 0 ? corr / Math.sqrt(e) : 0;
+      if (norm > best) { best = norm; bestLag = lag; }
+    }
+    return bestLag;
+  }
+  // Synthesise one lost 20 ms frame by repeating the last pitch period, with a
+  // gain that decays the longer the loss runs (fully silent after a few frames).
+  _conceal() {
+    const FRAME = 160, H = this.plcHist, L = this.plcLen, out = new Int16Array(FRAME);
+    if (L < 80) { this.concealRun++; this.plcHadLoss = true; return out; } // no history → silence
+    this.concealRun++; this.plcHadLoss = true;
+    let T = this._pitch(); if (T < 20) T = 80; if (T > L) T = L;
+    const g0 = Math.pow(0.75, this.concealRun - 1); // decay across successive lost frames
+    for (let i = 0; i < FRAME; i++) {
+      let g = g0;
+      if (this.concealRun >= 3) g *= Math.max(0, 1 - i / FRAME); // ramp to 0 on long losses
+      out[i] = (H[L - T + (i % T)] * g) | 0;
+    }
+    this._plcPush(out); // keep the synthesised audio in history so repeats stay continuous
+    return out;
+  }
+  // A real packet decoded. If we were concealing, cross-fade the first few ms of the
+  // real audio with a pitch-continued prediction so the return seam doesn't click.
+  _emitReal(pcm) {
+    if (this.plcHadLoss) {
+      const OLAP = 48, H = this.plcHist, L = this.plcLen;
+      if (L >= 80) {
+        let T = this._pitch(); if (T < 20) T = 80; if (T > L) T = L;
+        for (let i = 0; i < OLAP && i < pcm.length; i++) {
+          const pred = H[L - T + (i % T)], w = i / OLAP;
+          pcm[i] = ((pred * (1 - w)) + (pcm[i] * w)) | 0;
+        }
+      }
+      this.plcHadLoss = false; this.concealRun = 0;
+    }
+    this._plcPush(pcm);
+    if (this.onPcm) this.onPcm(pcm);
+  }
+  close() { if (this.txTimer) { clearInterval(this.txTimer); this.txTimer = null; } try { this.sock && this.sock.close(); } catch (_) {} this.sock = null; this.remoteIp = null; this.txQueue = []; this.rxMap.clear(); this.rxNext = -1; this.plcLen = 0; this.concealRun = 0; this.plcHadLoss = false; }
 }
 
 // cfg: { serviceHost, servicePort, realm, ext, secret, displayName }

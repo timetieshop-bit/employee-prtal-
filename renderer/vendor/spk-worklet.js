@@ -20,9 +20,13 @@ class SpkProcessor extends AudioWorkletProcessor {
     this.buf = new Float32Array(this.size);
     this.w = 0; this.r = 0; this.phase = 0;
 
-    this.FLOOR = 480;   // 60 ms @ 8k — minimum target cushion
+    // Hold a steady ~100 ms like Asterisk/Vicidial's fixed jitterbuffer (jbmaxsize=100)
+    // rather than shrinking back toward near-zero between bursts — a too-shallow floor
+    // is what let gaps re-form on rough home links. It still GROWS on trouble, it just
+    // never drops below a solid 100 ms cushion.
+    this.FLOOR = 800;   // 100 ms @ 8k — minimum target cushion (matches jbmaxsize=100)
     this.CEIL  = 2800;  // 350 ms — max target cushion on a rough link
-    this.prime = 720;   // 90 ms — current target cushion (adaptive)
+    this.prime = 880;   // 110 ms — current target cushion (adaptive, floored at 100 ms)
     this.playing = false; // false = filling (output muted) until `prime` is reached
     this.stable = 0;      // consecutive clean output samples since the last underrun
 
